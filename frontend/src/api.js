@@ -24,9 +24,21 @@ api.interceptors.response.use(
     
     // If 401 and not already retrying
     if (error.response?.status === 401 && !originalRequest._retry) {
-      localStorage.removeItem('access_token')
-      localStorage.removeItem('refresh_token')
-      window.location.href = '/login'
+      const url = originalRequest?.url ?? ''
+      const isAuthRequest =
+        url.includes('/auth/login/') ||
+        url.includes('/auth/register/') ||
+        url.includes('/auth/token/') ||
+        url.includes('/auth/refresh/')
+      const hasAccessToken = Boolean(localStorage.getItem('access_token'))
+
+      if (!isAuthRequest && hasAccessToken) {
+        localStorage.removeItem('access_token')
+        localStorage.removeItem('refresh_token')
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login'
+        }
+      }
     }
     return Promise.reject(error)
   }
