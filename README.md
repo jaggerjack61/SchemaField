@@ -23,6 +23,51 @@ _(Note: If you downloaded the project manually, navigate to the project root dir
 
 ---
 
+## Docker (Recommended)
+
+This repo includes a Docker-based dev setup that runs:
+
+- Backend (Django) at `http://localhost:8000`
+- Frontend (Vite) at `http://localhost:5173` (proxies `/api` and `/media` to the backend)
+
+### Start the stack
+
+From the repo root:
+
+```bash
+docker compose up --build
+```
+
+Stop:
+
+```bash
+docker compose down
+```
+
+Reset containers + volumes (fresh DB):
+
+```bash
+docker compose down -v
+```
+
+### Superuser / Admin
+
+Interactive (recommended):
+
+```bash
+docker compose exec backend python manage.py createsuperuser
+```
+
+Optional automatic superuser creation: set these environment variables on the `backend` service:
+
+- `DJANGO_SUPERUSER_EMAIL`
+- `DJANGO_SUPERUSER_NAME`
+- `DJANGO_SUPERUSER_PASSWORD`
+
+### SQLite persistence in Docker
+
+When running via Docker Compose, SQLite uses a named Docker volume at `/data/db.sqlite3` (not the `backend/db.sqlite3` file on your host). This avoids accidentally “sharing” a host database via the code bind mount.
+
 ### 2. Backend Setup (Django)
 
 Navigate to the `backend` directory:
