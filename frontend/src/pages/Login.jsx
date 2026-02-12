@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
 export default function Login() {
@@ -7,8 +7,14 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const { login } = useAuth()
+  const { login, user } = useAuth()
   const navigate = useNavigate()
+
+  useEffect(() => {
+    if (user) {
+      navigate('/dashboard')
+    }
+  }, [user, navigate])
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -27,62 +33,66 @@ export default function Login() {
   }
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: 'linear-gradient(135deg, #13131f 0%, #1c1c2e 100%)'
-    }}>
-      <div className="form-card" style={{ width: '100%', maxWidth: '400px', padding: '2rem' }}>
-        <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          <div style={{ fontSize: '3rem', marginBottom: '0.5rem' }}>🔐</div>
-          <h1>Welcome Back</h1>
-          <p style={{ color: 'var(--text-secondary)' }}>Sign in to continue to SchemaField</p>
+    <div className="login-page abstract-theme">
+      <div className="grid-bg"></div>
+      
+      <div className="login-container-abstract">
+        <Link to="/" className="brand-link">
+          <span className="logo-icon-small">S</span>
+          SchemaField
+        </Link>
+        
+        <div className="login-card-abstract">
+          <div className="card-header">
+            <h2>Authentication</h2>
+            <p>Enter your credentials to access the workspace.</p>
+          </div>
+
+          {error && (
+            <div className="error-message-abstract">
+              <span className="error-icon">!</span>
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="login-form">
+            <div className="form-group">
+              <label>Email Address</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                placeholder="name@example.com"
+                className="input-abstract"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                placeholder="••••••••"
+                className="input-abstract"
+              />
+            </div>
+
+            <button 
+              type="submit" 
+              className="btn btn-primary btn-block"
+              disabled={loading}
+            >
+              {loading ? 'Authenticating...' : 'Sign In'}
+            </button>
+          </form>
+          
+          <div className="card-footer">
+            <p>Don't have an account? <a href="#">Request Access</a></p>
+          </div>
         </div>
-
-        {error && (
-          <div className="toast error" style={{ position: 'static', transform: 'none', marginBottom: '1rem' }}>
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem' }}>Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="form-title-input" 
-              style={{ width: '100%', fontSize: '1rem', background: 'var(--bg-secondary)' }}
-              placeholder="name@example.com"
-            />
-          </div>
-
-          <div style={{ marginBottom: '2rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem' }}>Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="form-title-input"
-              style={{ width: '100%', fontSize: '1rem', background: 'var(--bg-secondary)' }}
-              placeholder="••••••••"
-            />
-          </div>
-
-          <button 
-            type="submit" 
-            className="btn btn-primary" 
-            style={{ width: '100%', justifyContent: 'center', padding: '0.75rem' }}
-            disabled={loading}
-          >
-            {loading ? 'Signing in...' : 'Sign In'}
-          </button>
-        </form>
       </div>
     </div>
   )
