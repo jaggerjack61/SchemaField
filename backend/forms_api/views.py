@@ -218,6 +218,68 @@ class FormViewSet(viewsets.ModelViewSet):
         serializer = ResponseSerializer(responses, many=True)
         return DRFResponse(serializer.data)
 
+    @action(detail=True, methods=['get'])
+    def export_csv(self, request, pk=None):
+        import csv
+        from django.http import HttpResponse
+
+        form = self.get_object()
+        
+        # Create the HttpResponse object with the appropriate CSV header.
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="{form.title}_responses.csv"'
+
+        writer = csv.writer(response)
+        
+        # Build headers
+        # Static headers
+        headers = ['Response ID', 'Submitted At']
+        
+        # Dynamic headers based on questions (ordered)
+        questions = []
+        for section in form.sections.all():
+            for question in section.questions.all():
+                headers.append(question.text)
+                questions.append(question)
+        
+        writer.writerow(headers)
+
+        # Build rows
+        responses = form.responses.prefetch_related(
+            'answers__question', 'answers__selected_choices'
+        ).order_by('-created_at')
+
+        for r in responses:
+            row = [r.id, r.created_at.strftime('%Y-%m-%d %H:%M:%S')]
+            
+            # Map answers to questions
+            # We can't just iterate answers because they might be sparse or unordered
+            # So we iterate the known questions and find the matching answer
+            answers_map = {a.question_id: a for a in r.answers.all()}
+            
+            for q in questions:
+                answer = answers_map.get(q.id)
+                if not answer:
+                    row.append('')
+                    continue
+                
+                if q.question_type in ['multiple_choice', 'multiple_select']:
+                    # Join selected choice texts
+                    choices = [c.text for c in answer.selected_choices.all()]
+                    row.append(', '.join(choices))
+                elif q.question_type == 'media':
+                    if answer.file_answer:
+                        # Return absolute URL if possible, or relative
+                        row.append(request.build_absolute_uri(answer.file_answer.url))
+                    else:
+                        row.append('')
+                else:
+                    row.append(answer.text_answer or '')
+            
+            writer.writerow(row)
+
+        return response
+
 
 class FormPermissionViewSet(viewsets.ModelViewSet):
     serializer_class = FormPermissionSerializer

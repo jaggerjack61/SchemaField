@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { getForm, getFormResponses } from '../api'
+import { getForm, getFormResponses, exportFormResponses } from '../api'
 
 export default function FormResponses() {
   const { id } = useParams()
@@ -29,6 +29,24 @@ export default function FormResponses() {
     }
   }
 
+  async function handleExportCSV() {
+    try {
+      const response = await exportFormResponses(id)
+      
+      // Create a blob link to download
+      const url = window.URL.createObjectURL(new Blob([response.data]))
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `${form.title}_responses.csv`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+    } catch (err) {
+      console.error('Failed to export CSV', err)
+      alert('Failed to export CSV')
+    }
+  }
+
   if (loading) return <div className="loading"><div className="spinner" /></div>
   if (error) return <div className="empty-state"><h2>{error}</h2></div>
 
@@ -51,9 +69,14 @@ export default function FormResponses() {
            <h1>Responses: {form.title}</h1>
            <span className="form-count">{responses.length} response{responses.length !== 1 ? 's' : ''}</span>
         </div>
-        <Link to={`/forms/${id}/edit`} className="btn btn-secondary">
-          ← Back to Editor
-        </Link>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button onClick={handleExportCSV} className="btn btn-secondary">
+            ⬇ Export CSV
+          </button>
+          <Link to={`/forms/${id}/edit`} className="btn btn-secondary">
+            ← Back to Editor
+          </Link>
+        </div>
       </div>
 
       <div className="tabs">

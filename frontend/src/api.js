@@ -44,6 +44,7 @@ export const updateForm = (id, data) => api.put('/forms/' + id + '/', data)
 export const deleteForm = (id) => api.delete('/forms/' + id + '/')
 export const submitForm = (id, data) => api.post('/forms/' + id + '/submit/', data)
 export const getFormResponses = (id) => api.get('/forms/' + id + '/responses/')
+export const exportFormResponses = (id) => api.get('/forms/' + id + '/export_csv/', { responseType: 'blob' })  // Expect binary data
 
 // Users (Admin)
 export const getUsers = () => api.get('/users/')
