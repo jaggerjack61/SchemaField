@@ -1,0 +1,104 @@
+/* ============================================================
+   Form Preview
+   ============================================================ */
+.preview-container {
+  animation: fadeIn 0.3s ease;
+}
+
+.preview-header {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  margin-bottom: 24px;
+  border-top: 4px solid var(--accent);
+}
+
+.preview-header h1 {
+  font-size: 1.6rem;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.preview-header p {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.preview-section {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 28px;
+  margin-bottom: 20px;
+}
+
+.preview-section h2 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.preview-section .section-desc-text {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  margin-bottom: 20px;
+}
+
+.preview-question {
+  margin-bottom: 24px;
+}
+
+.preview-question:last-child {
+  margin-bottom: 0;
+}
+
+.preview-question label {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+.preview-question .required-star {
+  color: var(--danger);
+  margin-left: 4px;
+}
+
+.preview-question input[type="text"],
+.preview-question input[type="number"],
+.preview-question textarea {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  font-family: var(--font);
+  font-size: 0.9rem;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color var(--transition);
+}
+
+.preview-question input:focus,
+.preview-question textarea:focus {
+  border-color: var(--accent);
+}
+
+.preview-question textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.preview-choice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.preview-choice input {
+  accent-color: var(--accent);
+}

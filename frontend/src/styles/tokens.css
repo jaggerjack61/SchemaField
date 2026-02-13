@@ -1,0 +1,53 @@
+/* ============================================================
+   SchemaField — Global Design System
+   ============================================================ */
+
+/* ---------- CSS Variables (Dark Theme) ---------- */
+/* ---------- CSS Variables (Vercel / SchemaField Theme) ---------- */
+:root {
+  --bg-primary: #ffffff;
+  --bg-secondary: #fafafa;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f0f0f0;
+  --bg-input: #ffffff;
+  --bg-glass: rgba(255, 255, 255, 0.8);
+  
+  --text-primary: #000000;
+  --text-secondary: #666666;
+  --text-muted: #888888;
+  --text-inverse: #ffffff;
+
+  --accent: #000000;
+  --accent-hover: #333333;
+  --accent-subtle: #f4f4f4;
+  --accent-glow: rgba(0, 0, 0, 0.1);
+
+  --danger: #e00;
+  --danger-hover: #d00;
+  --danger-subtle: #ffebeb;
+
+  --success: #0070f3;
+  --warning: #f5a623;
+
+  --border: #eaeaea;
+  --border-focus: #000000;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 5px 10px rgba(0, 0, 0, 0.12);
+  --shadow-lg: 0 12px 24px rgba(0, 0, 0, 0.12);
+  --shadow-glow: 0 0 20px rgba(0, 0, 0, 0.1);
+
+  --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --transition: 0.15s ease;
+}
+
+/* Dark Mode Support (optional, Vercel supports both but default is light/dark toggle) 
+   For now, we stick to a light, clean theme as per "minimalistic" request, 
+   but let's add a media query for system dark mode if we want to be fancy later.
+   For this specific request, the user likely wants the "Vercel Light" clean look.
+*/

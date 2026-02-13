@@ -1,0 +1,42 @@
+/* Admin Table */
+th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+td {
+  font-size: 0.95rem;
+  color: var(--text-primary);
+}
+
+tr:last-child {
+  border-bottom: none !important;
+}
+
+/* Permissions List */
+.permissions-list table {
+  width: 100%;
+}
+
+.permissions-list td {
+  vertical-align: middle;
+}
+
+/* Badges */
+.badge-owned {
+  font-size: 0.75rem;
+  background: rgba(124, 92, 252, 0.2);
+  color: #a78bfa;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.badge-shared {
+  font-size: 0.75rem;
+  background: rgba(255, 255, 255, 0.1);
+  color: #ccc;
+  padding: 2px 6px;
+  border-radius: 4px;
+}

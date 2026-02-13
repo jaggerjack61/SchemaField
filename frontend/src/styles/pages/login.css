@@ -1,0 +1,150 @@
+/* Login Page */
+.login-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #13131f 0%, #1c1c2e 100%);
+}
+
+/* ============================================================
+   Login Page (Abstract)
+   ============================================================ */
+.login-container-abstract {
+  position: relative;
+  z-index: 10;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.brand-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 700;
+  font-size: 1.2rem;
+  color: #000;
+  margin-bottom: 40px;
+  text-decoration: none;
+}
+
+.logo-icon-small {
+  width: 24px;
+  height: 24px;
+  background: #000;
+  color: #fff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.login-card-abstract {
+  width: 100%;
+  max-width: 400px;
+  background: #fff;
+  border: 1px solid #eaeaea;
+  border-radius: 12px;
+  padding: 40px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+  animation: slideUp 0.4s ease;
+}
+
+.card-header {
+  margin-bottom: 32px;
+  text-align: center;
+}
+
+.card-header h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: #000;
+  letter-spacing: -0.03em;
+}
+
+.card-header p {
+  font-size: 0.95rem;
+  color: #666;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 500;
+  margin-bottom: 8px;
+  color: #333;
+}
+
+.input-abstract {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 0.95rem;
+  font-family: var(--font);
+  border: 1px solid #eaeaea;
+  border-radius: 6px;
+  background: #fff;
+  transition: all 0.2s;
+  outline: none;
+  color: #000;
+}
+
+.input-abstract:focus {
+  border-color: #000;
+  box-shadow: 0 0 0 1px #000;
+}
+
+.card-footer {
+  margin-top: 24px;
+  text-align: center;
+  font-size: 0.9rem;
+  color: #666;
+  border-top: 1px solid #eaeaea;
+  padding-top: 20px;
+}
+
+.card-footer a {
+  color: #000;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.card-footer a:hover {
+  text-decoration: underline;
+}
+
+.error-message-abstract {
+  background: #fff0f0;
+  border: 1px solid #ffd0d0;
+  color: #d00;
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.error-icon {
+  width: 16px;
+  height: 16px;
+  background: #d00;
+  color: #fff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 800;
+}

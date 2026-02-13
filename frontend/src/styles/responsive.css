@@ -1,0 +1,38 @@
+/* ============================================================
+   Responsive
+   ============================================================ */
+@media (max-width: 640px) {
+  .main-content {
+    padding: 20px 14px 48px;
+  }
+
+  .forms-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .navbar {
+    padding: 0 16px;
+  }
+
+  .builder-header input.form-title-input {
+    font-size: 1.3rem;
+  }
+
+  .dashboard-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+}
+
+@media (max-width: 768px) {
+  .title-abstract {
+    font-size: 3.5rem;
+  }
+  .hero-abstract {
+    padding: 120px 24px 80px;
+  }
+  .manifesto-grid {
+    grid-template-columns: 1fr;
+  }
+}
