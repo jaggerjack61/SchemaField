@@ -196,20 +196,18 @@ function ChoiceStats({ question, answers, choicesMap, totalResponses }) {
   question.choices.forEach(c => counts[c.id] = 0)
   
   answers.forEach(a => {
-    a.selected_choices.forEach(cId => {
+    const selectedChoices = Array.isArray(a.selected_choices) ? a.selected_choices : []
+    selectedChoices.forEach(cId => {
       counts[cId] = (counts[cId] || 0) + 1
     })
   })
 
-  const maxCount = Math.max(...Object.values(counts), 1)
+  const validAnswers = answers.filter(a => Array.isArray(a.selected_choices) && a.selected_choices.length > 0).length
 
   return (
     <div>
       {question.choices.map(choice => {
         const count = counts[choice.id] || 0
-        const percent = Math.round((count / answers.length) * 100) || 0 // % of respondents who answered this? Or absolute? 
-        // Usually % of total answers for this question
-        const validAnswers = answers.filter(a => a.selected_choices.length > 0).length
         const displayPercent = validAnswers > 0 ? Math.round((count / validAnswers) * 100) : 0
         
         return (
@@ -222,13 +220,13 @@ function ChoiceStats({ question, answers, choicesMap, totalResponses }) {
               />
             </div>
             <div className="chart-count">
-              {count}
+              {count}{validAnswers > 0 ? ` (${displayPercent}%)` : ''}
             </div>
           </div>
         )
       })}
       <div style={{ marginTop: '12px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-        {answers.length} responses
+        {validAnswers} response{validAnswers !== 1 ? 's' : ''}
       </div>
     </div>
   )

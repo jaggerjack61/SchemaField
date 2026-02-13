@@ -22,6 +22,9 @@
   --accent-subtle: #f4f4f4;
   --accent-glow: rgba(0, 0, 0, 0.1);
 
+  --primary: var(--accent);
+  --card-bg: var(--bg-card);
+
   --danger: #e00;
   --danger-hover: #d00;
   --danger-subtle: #ffebeb;
