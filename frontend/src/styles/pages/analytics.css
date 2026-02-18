@@ -1,0 +1,126 @@
+/* ============================================================
+   Analytics
+   ============================================================ */
+.analytics-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.analytics-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+}
+
+.analytics-kpi-card {
+  margin-bottom: 0;
+  padding: 20px;
+}
+
+.analytics-kpi-title {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.analytics-kpi-value {
+  color: var(--text-primary);
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.1;
+  margin-top: 8px;
+}
+
+.analytics-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  gap: 12px;
+}
+
+.analytics-card-header h2 {
+  font-size: 1.2rem;
+  margin: 0;
+}
+
+.analytics-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.analytics-filter-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.analytics-filter-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+}
+
+.analytics-filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.analytics-filter-actions {
+  display: flex;
+  align-items: end;
+  justify-content: flex-end;
+}
+
+.analytics-filter-field label {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.analytics-filter-field select,
+.analytics-filter-field input {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font);
+  font-size: 0.9rem;
+  padding: 10px 12px;
+  outline: none;
+}
+
+.analytics-filter-field select:focus,
+.analytics-filter-field input:focus {
+  border-color: var(--accent);
+}
+
+.analytics-subtitle {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.analytics-footnote {
+  margin-top: 12px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.analytics-text-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 24px;
+}
+
+.analytics-text-label {
+  width: auto;
+  flex: 1;
+}

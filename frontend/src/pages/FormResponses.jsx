@@ -70,6 +70,12 @@ export default function FormResponses() {
            <span className="form-count">{responses.length} response{responses.length !== 1 ? 's' : ''}</span>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            onClick={() => window.open(`/forms/${id}/responses/analytics`, '_blank', 'noopener,noreferrer')}
+            className="btn btn-primary"
+          >
+            📊 View Analytics
+          </button>
           <button onClick={handleExportCSV} className="btn btn-secondary">
             ⬇ Export CSV
           </button>

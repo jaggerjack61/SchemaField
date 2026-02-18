@@ -8,6 +8,7 @@ import FormBuilder from './pages/FormBuilder'
 import FormPreview from './pages/FormPreview'
 import PublicFormView from './pages/PublicFormView'
 import FormResponses from './pages/FormResponses'
+import FormAnalytics from './pages/FormAnalytics'
 import AdminPanel from './pages/AdminPanel'
 import LandingPage from './pages/LandingPage'
 
@@ -31,6 +32,7 @@ function App() {
               <Route path="/forms/:id/edit" element={<FormBuilder />} />
               <Route path="/forms/:id/preview" element={<FormPreview />} />
               <Route path="/forms/:id/responses" element={<FormResponses />} />
+              <Route path="/forms/:id/responses/analytics" element={<FormAnalytics />} />
             </Route>
 
             {/* Admin Routes */}
