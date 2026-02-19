@@ -17,6 +17,8 @@ export default function FormAnalytics() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [trendMode, setTrendMode] = useState('daily')
+  const [showExportModal, setShowExportModal] = useState(false)
+  const [exportFileName, setExportFileName] = useState('')
   const nextFilterIdRef = useRef(2)
   const [filters, setFilters] = useState(() => [createEmptyFilter(1)])
 
@@ -76,6 +78,35 @@ export default function FormAnalytics() {
     [filteredResponses, trendMode]
   )
 
+  function downloadFilteredCSV(requestedName) {
+    const defaultName = `${sanitizeFilename(form?.title || 'form')}_filtered_analytics`
+    const finalName = sanitizeFilename((requestedName || '').trim()) || defaultName
+    const csv = buildAnalyticsCsv(filteredResponses, questionEntries, form.sections.length > 1)
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.setAttribute('download', `${finalName}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.URL.revokeObjectURL(url)
+    setShowExportModal(false)
+    setExportFileName('')
+  }
+
+  function handleExportFilteredCSV() {
+    if (!filteredResponses.length) return
+    setExportFileName('')
+    setShowExportModal(true)
+  }
+
+  function handleExportModalSubmit(event) {
+    event.preventDefault()
+    downloadFilteredCSV(exportFileName)
+  }
+
   function updateFilter(filterId, updates) {
     setFilters(current =>
       current.map(filter => filter.id === filterId ? { ...filter, ...updates } : filter)
@@ -125,6 +156,9 @@ export default function FormAnalytics() {
           </span>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
+          <button className="btn btn-primary" onClick={handleExportFilteredCSV} disabled={!filteredResponses.length}>
+            ⬇ Export Filtered CSV
+          </button>
           <Link to={`/forms/${id}/responses`} className="btn btn-secondary">
             ← Back to Responses
           </Link>
@@ -274,6 +308,41 @@ export default function FormAnalytics() {
           </div>
         ))}
       </div>
+
+      {showExportModal && (
+        <div className="confirm-overlay" onClick={() => setShowExportModal(false)}>
+          <div className="confirm-dialog analytics-export-modal" onClick={(event) => event.stopPropagation()}>
+            <h3>Export Filtered CSV</h3>
+            <p>Enter a file name, or leave it blank to use the default.</p>
+
+            <form className="analytics-export-form" onSubmit={handleExportModalSubmit}>
+              <div className="analytics-export-field">
+                <label htmlFor="analyticsExportFilename">File name (optional)</label>
+                <input
+                  id="analyticsExportFilename"
+                  type="text"
+                  value={exportFileName}
+                  placeholder="Leave blank to use default"
+                  onChange={(event) => setExportFileName(event.target.value)}
+                  autoFocus
+                />
+              </div>
+
+              <div className="confirm-actions">
+                <button type="button" className="btn btn-secondary" onClick={() => setShowExportModal(false)}>
+                  Cancel
+                </button>
+                <button type="button" className="btn btn-secondary" onClick={() => downloadFilteredCSV('')}>
+                  Leave Blank
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  Export CSV
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -549,4 +618,61 @@ function getWeekStart(date) {
   copy.setHours(0, 0, 0, 0)
   copy.setDate(copy.getDate() - day)
   return copy
+}
+
+function buildAnalyticsCsv(responses, questionEntries, includeSectionTitle) {
+  const headers = ['Submitted At', ...questionEntries.map(({ section, question }) => (
+    includeSectionTitle ? `${section.title} - ${question.text}` : question.text
+  ))]
+
+  const rows = responses.map(response => {
+    const cells = [new Date(response.created_at).toLocaleString()]
+
+    questionEntries.forEach(({ question }) => {
+      const answer = response.answers.find(item => String(item.question) === String(question.id))
+      cells.push(formatCsvAnswer(answer, question))
+    })
+
+    return cells
+  })
+
+  return [headers, ...rows]
+    .map(row => row.map(escapeCsvValue).join(','))
+    .join('\n')
+}
+
+function formatCsvAnswer(answer, question) {
+  if (!answer) return ''
+
+  if (question.question_type === 'multiple_choice' || question.question_type === 'multiple_select') {
+    const selectedChoices = Array.isArray(answer.selected_choices) ? answer.selected_choices : []
+    if (!selectedChoices.length) return ''
+
+    const choiceTextById = {}
+    question.choices.forEach(choice => {
+      choiceTextById[String(choice.id)] = choice.text
+    })
+
+    return selectedChoices
+      .map(choiceId => choiceTextById[String(choiceId)] || String(choiceId))
+      .join(' | ')
+  }
+
+  if (question.question_type === 'media') {
+    return answer.file_answer || ''
+  }
+
+  return answer.text_answer || ''
+}
+
+function escapeCsvValue(value) {
+  const safeValue = String(value ?? '')
+  const escaped = safeValue.replace(/"/g, '""')
+  return `"${escaped}"`
+}
+
+function sanitizeFilename(value) {
+  return String(value || '')
+    .replace(/[\\/:*?"<>|]/g, '')
+    .trim()
 }
