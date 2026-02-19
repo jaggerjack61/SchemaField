@@ -1,11 +1,11 @@
 @echo off
-:: Check if a commit message was provided
+:: If no argument is provided, just show status
 if "%~1"=="" (
-    echo Error: Please provide a commit message.
-    echo Usage: g "your message here"
-    exit /b 1
+    git status
+    exit /b
 )
 
+:: If an argument exists, run the add-commit-push sequence
 git add .
 git commit -m "%~1"
 git push
