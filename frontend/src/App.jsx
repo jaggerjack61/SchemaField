@@ -10,6 +10,8 @@ import PublicFormView from './pages/PublicFormView'
 import FormResponses from './pages/FormResponses'
 import FormAnalytics from './pages/FormAnalytics'
 import AdminPanel from './pages/AdminPanel'
+import AdminUserManagement from './pages/AdminUserManagement'
+import AdminFileManagement from './pages/AdminFileManagement'
 import LandingPage from './pages/LandingPage'
 
 function App() {
@@ -38,6 +40,8 @@ function App() {
             {/* Admin Routes */}
             <Route element={<ProtectedRoute adminOnly />}>
               <Route path="/admin" element={<AdminPanel />} />
+              <Route path="/admin/users" element={<AdminUserManagement />} />
+              <Route path="/admin/files" element={<AdminFileManagement />} />
             </Route>
           </Routes>
         </main>

@@ -62,6 +62,9 @@ export const exportFormResponses = (id) => api.get('/forms/' + id + '/export_csv
 export const getUsers = () => api.get('/users/')
 export const createUser = (data) => api.post('/users/', data)
 export const resetUserPassword = (id, password) => api.post('/users/' + id + '/reset_password/', { password })
+export const getFileManagerSummary = () => api.get('/users/file-manager/summary/')
+export const getFileManagerBrowser = (path = '') => api.get('/users/file-manager/browser/', { params: { path } })
+export const deleteManagedFile = (path) => api.delete('/users/file-manager/file/', { params: { path } })
 
 // Permissions
 export const getFormPermissions = () => api.get('/permissions/')

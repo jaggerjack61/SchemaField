@@ -15,6 +15,74 @@ tr:last-child {
   border-bottom: none !important;
 }
 
+.admin-view-switch {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.admin-file-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.admin-metric-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.admin-metric-label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.admin-metric-value {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.admin-file-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.admin-data-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.admin-file-browser-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.admin-file-browser-controls {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.admin-current-path {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  margin-bottom: 0.75rem;
+}
+
+.admin-file-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
 /* Permissions List */
 .permissions-list table {
   width: 100%;
@@ -39,4 +107,11 @@ tr:last-child {
   color: #ccc;
   padding: 2px 6px;
   border-radius: 4px;
+}
+
+@media (max-width: 1024px) {
+  .admin-file-metrics,
+  .admin-file-grid {
+    grid-template-columns: 1fr;
+  }
 }

@@ -21,7 +21,7 @@ export default function Navbar() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginRight: '1rem' }}>
               <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{user.email}</span>
               {isAdmin && (
-                <Link to="/admin" className="btn btn-secondary" style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}>
+                <Link to="/admin/users" className="btn btn-secondary" style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}>
                   🛡️ Admin
                 </Link>
               )}

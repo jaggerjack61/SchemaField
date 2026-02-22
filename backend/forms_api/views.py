@@ -4,10 +4,15 @@ from rest_framework.response import Response as DRFResponse
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
-from django.db.models import Q
+from django.db.models import Q, Count
 from django.contrib.auth import get_user_model
+from django.conf import settings
 
-from .models import Form, FormPermission
+from pathlib import Path
+import shutil
+from datetime import datetime, timezone as dt_timezone
+
+from .models import Form, FormPermission, Answer
 from .serializers import (
     FormListSerializer, FormDetailSerializer, ResponseSerializer,
     UserSerializer, LoginSerializer, CreateUserSerializer, 
@@ -49,6 +54,140 @@ class UserViewSet(viewsets.ModelViewSet):
             user.save()
             return DRFResponse({'status': 'password reset'})
         return DRFResponse(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['get'], url_path='file-manager/summary')
+    def file_manager_summary(self, request):
+        media_root = Path(settings.MEDIA_ROOT).resolve()
+        media_root.mkdir(parents=True, exist_ok=True)
+
+        all_files = [p for p in media_root.rglob('*') if p.is_file()]
+        total_size_bytes = sum(p.stat().st_size for p in all_files)
+        total_files = len(all_files)
+
+        try:
+            disk = shutil.disk_usage(media_root)
+            space_left_bytes = disk.free
+            total_disk_bytes = disk.total
+        except OSError:
+            space_left_bytes = None
+            total_disk_bytes = None
+
+        forms_with_most_files = (
+            Form.objects
+            .filter(responses__answers__file_answer__isnull=False)
+            .exclude(responses__answers__file_answer='')
+            .annotate(file_count=Count('responses__answers__id', distinct=True))
+            .order_by('-file_count', '-updated_at')
+            .values('id', 'title', 'file_count')[:10]
+        )
+
+        extension_counts = {}
+        for file_path in all_files:
+            ext = file_path.suffix.lower().lstrip('.') or 'unknown'
+            extension_counts[ext] = extension_counts.get(ext, 0) + 1
+
+        sorted_extension_counts = sorted(
+            [{'type': ext, 'count': count} for ext, count in extension_counts.items()],
+            key=lambda item: (-item['count'], item['type'])
+        )
+
+        return DRFResponse({
+            'total_storage_used_bytes': total_size_bytes,
+            'space_left_bytes': space_left_bytes,
+            'total_disk_bytes': total_disk_bytes,
+            'total_files': total_files,
+            'forms_with_most_files': list(forms_with_most_files),
+            'file_types': sorted_extension_counts,
+        })
+
+    @action(detail=False, methods=['get'], url_path='file-manager/browser')
+    def file_manager_browser(self, request):
+        media_root = Path(settings.MEDIA_ROOT).resolve()
+        media_root.mkdir(parents=True, exist_ok=True)
+
+        requested_path = (request.query_params.get('path') or '').strip().replace('\\', '/')
+        relative_path = requested_path.strip('/')
+
+        current_dir = (media_root / relative_path).resolve() if relative_path else media_root
+        if not str(current_dir).startswith(str(media_root)):
+            return DRFResponse({'detail': 'Invalid path.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not current_dir.exists() or not current_dir.is_dir():
+            return DRFResponse({'detail': 'Directory not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        answer_file_rows = Answer.objects.exclude(file_answer='').exclude(file_answer__isnull=True).values(
+            'file_answer',
+            'response__form__id',
+            'response__form__title'
+        )
+        answer_map = {
+            row['file_answer']: {
+                'form_id': row['response__form__id'],
+                'form_title': row['response__form__title'],
+            }
+            for row in answer_file_rows
+        }
+
+        directories = []
+        files = []
+
+        for entry in sorted(current_dir.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower())):
+            rel = entry.relative_to(media_root).as_posix()
+            if entry.is_dir():
+                directories.append({
+                    'name': entry.name,
+                    'path': rel,
+                })
+                continue
+
+            stat_info = entry.stat()
+            related = answer_map.get(rel)
+            files.append({
+                'name': entry.name,
+                'path': rel,
+                'size_bytes': stat_info.st_size,
+                'modified_at': datetime.fromtimestamp(stat_info.st_mtime, tz=dt_timezone.utc).isoformat(),
+                'extension': (entry.suffix.lower().lstrip('.') or 'unknown'),
+                'url': request.build_absolute_uri(f"{settings.MEDIA_URL}{rel}"),
+                'form_id': related['form_id'] if related else None,
+                'form_title': related['form_title'] if related else None,
+            })
+
+        parent_path = None
+        if current_dir != media_root:
+            parent_path = current_dir.parent.relative_to(media_root).as_posix()
+
+        return DRFResponse({
+            'current_path': current_dir.relative_to(media_root).as_posix() if current_dir != media_root else '',
+            'parent_path': parent_path,
+            'directories': directories,
+            'files': files,
+        })
+
+    @action(detail=False, methods=['delete'], url_path='file-manager/file')
+    def file_manager_delete_file(self, request):
+        media_root = Path(settings.MEDIA_ROOT).resolve()
+        media_root.mkdir(parents=True, exist_ok=True)
+
+        requested_path = (request.query_params.get('path') or '').strip().replace('\\', '/')
+        relative_path = requested_path.strip('/')
+        if not relative_path:
+            return DRFResponse({'detail': 'File path is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        file_path = (media_root / relative_path).resolve()
+        if not str(file_path).startswith(str(media_root)):
+            return DRFResponse({'detail': 'Invalid file path.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not file_path.exists() or not file_path.is_file():
+            return DRFResponse({'detail': 'File not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        linked_answers = Answer.objects.filter(file_answer=relative_path)
+        linked_answers.update(file_answer=None)
+
+        file_path.unlink()
+
+        return DRFResponse({
+            'status': 'deleted',
+            'path': relative_path,
+        })
 
 
 class FormViewSet(viewsets.ModelViewSet):
