@@ -65,6 +65,8 @@ export const resetUserPassword = (id, password) => api.post('/users/' + id + '/r
 export const getFileManagerSummary = () => api.get('/users/file-manager/summary/')
 export const getFileManagerBrowser = (path = '') => api.get('/users/file-manager/browser/', { params: { path } })
 export const deleteManagedFile = (path) => api.delete('/users/file-manager/file/', { params: { path } })
+export const getCleanupPreview = (view = false) => api.get('/users/file-manager/cleanup-preview/', { params: { view } })
+export const runOrphanedCleanup = () => api.post('/users/file-manager/cleanup-orphaned-files/')
 
 // Permissions
 export const getFormPermissions = () => api.get('/permissions/')

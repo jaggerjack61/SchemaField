@@ -55,6 +55,35 @@ class UserViewSet(viewsets.ModelViewSet):
             return DRFResponse({'status': 'password reset'})
         return DRFResponse(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    def _collect_orphaned_managed_files(self):
+        media_root = Path(settings.MEDIA_ROOT).resolve()
+        media_root.mkdir(parents=True, exist_ok=True)
+
+        uploads_root = (media_root / 'uploads').resolve()
+        uploads_root.mkdir(parents=True, exist_ok=True)
+
+        qrcodes_root = (media_root / 'qrcodes').resolve()
+        qrcodes_root.mkdir(parents=True, exist_ok=True)
+
+        referenced_upload_files = set(
+            Answer.objects.exclude(file_answer='').exclude(file_answer__isnull=True).values_list('file_answer', flat=True)
+        )
+        referenced_qrcode_files = set(
+            Form.objects.exclude(qr_code='').exclude(qr_code__isnull=True).values_list('qr_code', flat=True)
+        )
+        referenced_files = referenced_upload_files | referenced_qrcode_files
+
+        orphaned_files = []
+        for root in [uploads_root, qrcodes_root]:
+            for path in root.rglob('*'):
+                if not path.is_file():
+                    continue
+                relative_path = path.relative_to(media_root).as_posix()
+                if relative_path not in referenced_files:
+                    orphaned_files.append(path)
+
+        return media_root, orphaned_files
+
     @action(detail=False, methods=['get'], url_path='file-manager/summary')
     def file_manager_summary(self, request):
         media_root = Path(settings.MEDIA_ROOT).resolve()
@@ -187,6 +216,51 @@ class UserViewSet(viewsets.ModelViewSet):
         return DRFResponse({
             'status': 'deleted',
             'path': relative_path,
+        })
+
+    @action(detail=False, methods=['get'], url_path='file-manager/cleanup-preview')
+    def file_manager_cleanup_preview(self, request):
+        include_files = (request.query_params.get('view') or '').strip().lower() in ['1', 'true', 'yes']
+        media_root, orphaned_files = self._collect_orphaned_managed_files()
+
+        payload = {
+            'delete_count': len(orphaned_files),
+            'total_size_bytes': sum(path.stat().st_size for path in orphaned_files),
+        }
+
+        if include_files:
+            payload['files'] = [
+                {
+                    'name': path.name,
+                    'path': path.relative_to(media_root).as_posix(),
+                    'size_bytes': path.stat().st_size,
+                    'modified_at': datetime.fromtimestamp(path.stat().st_mtime, tz=dt_timezone.utc).isoformat(),
+                    'url': request.build_absolute_uri(f"{settings.MEDIA_URL}{path.relative_to(media_root).as_posix()}"),
+                }
+                for path in sorted(orphaned_files, key=lambda file_path: file_path.as_posix().lower())
+            ]
+
+        return DRFResponse(payload)
+
+    @action(detail=False, methods=['post'], url_path='file-manager/cleanup-orphaned-files')
+    def file_manager_cleanup_orphaned_files(self, request):
+        media_root, orphaned_files = self._collect_orphaned_managed_files()
+
+        deleted_count = 0
+        failed_files = []
+
+        for path in orphaned_files:
+            relative_path = path.relative_to(media_root).as_posix()
+            try:
+                path.unlink()
+                deleted_count += 1
+            except OSError as exc:
+                failed_files.append({'path': relative_path, 'error': str(exc)})
+
+        return DRFResponse({
+            'deleted_count': deleted_count,
+            'failed_count': len(failed_files),
+            'failed_files': failed_files,
         })
 
 

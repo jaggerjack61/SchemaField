@@ -1,6 +1,12 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { getFileManagerSummary, getFileManagerBrowser, deleteManagedFile } from '../api'
+import {
+  getFileManagerSummary,
+  getFileManagerBrowser,
+  deleteManagedFile,
+  getCleanupPreview,
+  runOrphanedCleanup,
+} from '../api'
 
 export default function AdminFileManagement() {
   const [summary, setSummary] = useState(null)
@@ -13,11 +19,16 @@ export default function AdminFileManagement() {
   })
   const [browserLoading, setBrowserLoading] = useState(true)
   const [deletingFilePath, setDeletingFilePath] = useState('')
+  const [cleanupInfo, setCleanupInfo] = useState({ delete_count: 0, total_size_bytes: 0, files: [] })
+  const [cleanupLoading, setCleanupLoading] = useState(true)
+  const [cleanupRunning, setCleanupRunning] = useState(false)
+  const [showCleanupFiles, setShowCleanupFiles] = useState(false)
   const [toast, setToast] = useState(null)
 
   useEffect(() => {
     loadFileSummary()
     loadFileBrowser('')
+    loadCleanupPreview(false)
   }, [])
 
   async function loadFileSummary(silent = false) {
@@ -58,6 +69,48 @@ export default function AdminFileManagement() {
       showToast(err.response?.data?.detail || 'Failed to delete file', 'error')
     } finally {
       setDeletingFilePath('')
+    }
+  }
+
+  async function loadCleanupPreview(viewFiles = false) {
+    setCleanupLoading(true)
+    try {
+      const { data } = await getCleanupPreview(viewFiles)
+      setCleanupInfo({
+        delete_count: data.delete_count || 0,
+        total_size_bytes: data.total_size_bytes || 0,
+        files: data.files || [],
+      })
+      setShowCleanupFiles(viewFiles)
+    } catch (err) {
+      showToast('Failed to load cleanup preview', 'error')
+    } finally {
+      setCleanupLoading(false)
+    }
+  }
+
+  async function handleRunCleanup() {
+    if (cleanupInfo.delete_count === 0) {
+      showToast('No orphaned files to clean', 'success')
+      return
+    }
+
+    if (!window.confirm(`Delete ${cleanupInfo.delete_count} orphaned file(s)? This cannot be undone.`)) return
+
+    setCleanupRunning(true)
+    try {
+      const { data } = await runOrphanedCleanup()
+      showToast(`Cleanup complete. Deleted ${data.deleted_count || 0} file(s).`, 'success')
+      await Promise.all([
+        loadCleanupPreview(false),
+        loadFileSummary(true),
+        loadFileBrowser(browser.current_path || '', true),
+      ])
+      setShowCleanupFiles(false)
+    } catch (err) {
+      showToast('Cleanup failed', 'error')
+    } finally {
+      setCleanupRunning(false)
     }
   }
 
@@ -170,6 +223,71 @@ export default function AdminFileManagement() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      <div className="form-card" style={{ marginTop: '1rem', overflowX: 'auto' }}>
+        <div className="admin-file-browser-header">
+          <h3>Cleanup Orphaned Files (Uploads + QR Codes)</h3>
+          <div className="admin-file-browser-controls">
+            <button
+              className="btn btn-secondary"
+              onClick={() => loadCleanupPreview(false)}
+              disabled={cleanupLoading || cleanupRunning}
+            >
+              Check Count
+            </button>
+            <button
+              className="btn btn-secondary"
+              onClick={() => loadCleanupPreview(true)}
+              disabled={cleanupLoading || cleanupRunning}
+            >
+              View Files
+            </button>
+            <button
+              className="btn btn-danger"
+              onClick={handleRunCleanup}
+              disabled={cleanupLoading || cleanupRunning}
+            >
+              {cleanupRunning ? 'Cleaning...' : 'Cleanup'}
+            </button>
+          </div>
+        </div>
+
+        <p className="admin-current-path">
+          {cleanupLoading
+            ? 'Checking files...'
+            : `Will delete ${cleanupInfo.delete_count} file(s) (${formatBytes(cleanupInfo.total_size_bytes)}).`}
+        </p>
+
+        {showCleanupFiles && !cleanupLoading && (
+          <table className="admin-data-table">
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                <th style={{ padding: '0.8rem' }}>Path</th>
+                <th style={{ padding: '0.8rem' }}>Size</th>
+                <th style={{ padding: '0.8rem' }}>Updated</th>
+                <th style={{ padding: '0.8rem' }}>Open</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cleanupInfo.files.length === 0 && (
+                <tr>
+                  <td style={{ padding: '0.8rem' }} colSpan={4}>No files to clean.</td>
+                </tr>
+              )}
+              {cleanupInfo.files.map((file) => (
+                <tr key={file.path} style={{ borderBottom: '1px solid var(--border)' }}>
+                  <td style={{ padding: '0.8rem' }}>{file.path}</td>
+                  <td style={{ padding: '0.8rem' }}>{formatBytes(file.size_bytes)}</td>
+                  <td style={{ padding: '0.8rem' }}>{formatDate(file.modified_at)}</td>
+                  <td style={{ padding: '0.8rem' }}>
+                    <a href={file.url} target="_blank" rel="noreferrer" className="btn btn-secondary">Open</a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
 
       <div className="form-card" style={{ marginTop: '1rem', overflowX: 'auto' }}>
