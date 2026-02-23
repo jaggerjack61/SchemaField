@@ -23,6 +23,20 @@
     align-items: flex-start;
     gap: 8px;
   }
+
+  .dashboard-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dashboard-search {
+    max-width: none;
+  }
+
+  .view-toggle {
+    width: 100%;
+    justify-content: flex-end;
+  }
 }
 
 @media (max-width: 768px) {

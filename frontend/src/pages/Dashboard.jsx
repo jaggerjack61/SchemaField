@@ -1,17 +1,23 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { getForms, deleteForm } from '../api'
 
 import FormPermissions from '../components/FormPermissions'
 
+const FORMS_PAGE_SIZE = 12
+
 export default function Dashboard() {
   const [forms, setForms] = useState([])
+  const [searchTerm, setSearchTerm] = useState('')
+  const [viewMode, setViewMode] = useState('card')
+  const [visibleCount, setVisibleCount] = useState(FORMS_PAGE_SIZE)
   const [loading, setLoading] = useState(true)
   const [confirmId, setConfirmId] = useState(null)
   const [shareForm, setShareForm] = useState(null)
   const [managePermissionsId, setManagePermissionsId] = useState(null)
   const [toast, setToast] = useState(null)
   const [copied, setCopied] = useState(false)
+  const lazyLoaderRef = useRef(null)
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -69,6 +75,42 @@ export default function Dashboard() {
     setTimeout(() => setCopied(false), 2000)
   }
 
+  const normalizedSearchTerm = searchTerm.trim().toLowerCase()
+  const filteredForms = forms.filter((form) => {
+    if (!normalizedSearchTerm) {
+      return true
+    }
+
+    return [form.title, form.description, form.owner_name]
+      .filter(Boolean)
+      .some((value) => value.toLowerCase().includes(normalizedSearchTerm))
+  })
+  const visibleForms = filteredForms.slice(0, visibleCount)
+  const hasMoreForms = visibleCount < filteredForms.length
+
+  useEffect(() => {
+    setVisibleCount(FORMS_PAGE_SIZE)
+  }, [searchTerm])
+
+  useEffect(() => {
+    if (!hasMoreForms || !lazyLoaderRef.current) {
+      return
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setVisibleCount((count) => Math.min(count + FORMS_PAGE_SIZE, filteredForms.length))
+        }
+      },
+      { rootMargin: '200px 0px' }
+    )
+
+    observer.observe(lazyLoaderRef.current)
+
+    return () => observer.disconnect()
+  }, [hasMoreForms, filteredForms.length])
+
   if (loading) {
     return (
       <div className="loading">
@@ -82,25 +124,74 @@ export default function Dashboard() {
       <div className="dashboard-header">
         <div>
           <h1>My Forms</h1>
-          <span className="form-count">{forms.length} form{forms.length !== 1 ? 's' : ''}</span>
+          <span className="form-count">{filteredForms.length} of {forms.length} form{forms.length !== 1 ? 's' : ''}</span>
         </div>
         <Link to="/forms/new" className="btn btn-primary">
           + Create Form
         </Link>
       </div>
 
-      {forms.length === 0 ? (
+      <div className="dashboard-controls">
+        <input
+          type="text"
+          className="dashboard-search"
+          placeholder="Search forms..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          aria-label="Search forms"
+        />
+        <div className="view-toggle" role="group" aria-label="View mode">
+          <button
+            type="button"
+            className={`btn btn-secondary ${viewMode === 'card' ? 'active' : ''}`}
+            onClick={() => setViewMode('card')}
+            title="Card / icon view"
+            aria-label="Card / icon view"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" className="view-icon">
+              <rect x="3" y="3" width="8" height="8" rx="1.5" />
+              <rect x="13" y="3" width="8" height="8" rx="1.5" />
+              <rect x="3" y="13" width="8" height="8" rx="1.5" />
+              <rect x="13" y="13" width="8" height="8" rx="1.5" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className={`btn btn-secondary ${viewMode === 'list' ? 'active' : ''}`}
+            onClick={() => setViewMode('list')}
+            title="List / detail view"
+            aria-label="List / detail view"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" className="view-icon">
+              <path d="M4 6h16" />
+              <path d="M4 12h16" />
+              <path d="M4 18h16" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {filteredForms.length === 0 ? (
         <div className="empty-state">
           <div className="empty-icon">📝</div>
-          <h2>No forms yet</h2>
-          <p>Create your first form to get started!</p>
-          <Link to="/forms/new" className="btn btn-primary">
-            + Create Form
-          </Link>
+          {forms.length === 0 ? (
+            <>
+              <h2>No forms yet</h2>
+              <p>Create your first form to get started!</p>
+              <Link to="/forms/new" className="btn btn-primary">
+                + Create Form
+              </Link>
+            </>
+          ) : (
+            <>
+              <h2>No forms found</h2>
+              <p>Try a different search term.</p>
+            </>
+          )}
         </div>
       ) : (
-        <div className="forms-grid">
-          {forms.map((form) => (
+        <div className={`forms-grid ${viewMode === 'list' ? 'forms-list' : ''}`}>
+          {visibleForms.map((form) => (
             <div
               key={form.id}
               className="form-card"
@@ -173,6 +264,12 @@ export default function Dashboard() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {hasMoreForms && (
+        <div className="forms-lazy-loader" ref={lazyLoaderRef} aria-live="polite">
+          Loading more forms...
         </div>
       )}
 

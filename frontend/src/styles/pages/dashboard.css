@@ -22,10 +22,107 @@
   color: var(--text-muted);
 }
 
+.dashboard-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.dashboard-search {
+  width: 100%;
+  max-width: 380px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font);
+  font-size: 0.9rem;
+  padding: 10px 14px;
+  outline: none;
+}
+
+.dashboard-search:focus {
+  border-color: var(--accent);
+}
+
+.view-toggle {
+  display: flex;
+  gap: 8px;
+}
+
+.view-toggle .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+}
+
+.view-icon {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.forms-lazy-loader {
+  display: flex;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  padding: 8px 0 4px;
+}
+
+.view-toggle .btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .forms-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 20px;
+}
+
+.forms-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.forms-list .form-card {
+  padding: 14px 16px;
+  gap: 6px;
+  border-radius: var(--radius-sm);
+}
+
+.forms-list .form-card-meta {
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 0.75rem;
+}
+
+.forms-list .form-card-desc {
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  font-size: 0.8rem;
+}
+
+.forms-list .form-card-actions {
+  margin-top: 4px;
+  padding-top: 8px;
+  gap: 6px;
+}
+
+.forms-list .form-card-actions .btn {
+  padding: 5px 8px;
+  font-size: 0.75rem;
 }
 
 .form-card {

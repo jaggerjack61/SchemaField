@@ -14,7 +14,7 @@ if "%~1"=="-m" (
     if "%~2"=="-r" (
         echo Running migrate refresh
         @REM delete all sqlite3 files
-        del /q /s "db.sqlite3"
+        del /q /s "*.sqlite3"
         python manage.py migrate
         exit /b
       
