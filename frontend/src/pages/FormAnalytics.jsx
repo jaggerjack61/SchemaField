@@ -118,7 +118,9 @@ export default function FormAnalytics() {
       questionId,
       choiceId: '',
       textQuery: '',
-      mediaMode: ''
+      mediaMode: '',
+      numericOperator: '=',
+      numericValue: ''
     })
   }
 
@@ -239,7 +241,36 @@ export default function FormAnalytics() {
                   </div>
                 )}
 
-                {selectedFilterQuestion && selectedFilterQuestion.question_type !== 'multiple_choice' && selectedFilterQuestion.question_type !== 'multiple_select' && selectedFilterQuestion.question_type !== 'media' && (
+                {selectedFilterQuestion && (selectedFilterQuestion.question_type === 'number' || selectedFilterQuestion.question_type === 'float') && (
+                  <>
+                    <div className="analytics-filter-field">
+                      <label>Operator</label>
+                      <select
+                        value={filter.numericOperator}
+                        onChange={(event) => updateFilter(filter.id, { numericOperator: event.target.value })}
+                      >
+                        <option value="=">= (equals)</option>
+                        <option value="!=">!= (not equal)</option>
+                        <option value=">">&gt; (greater than)</option>
+                        <option value=">=">&gt;= (at least)</option>
+                        <option value="<">&lt; (less than)</option>
+                        <option value="<=">&lt;= (at most)</option>
+                      </select>
+                    </div>
+                    <div className="analytics-filter-field">
+                      <label>Value</label>
+                      <input
+                        type="number"
+                        step={selectedFilterQuestion.question_type === 'float' ? 'any' : '1'}
+                        value={filter.numericValue}
+                        placeholder="Enter number"
+                        onChange={(event) => updateFilter(filter.id, { numericValue: event.target.value })}
+                      />
+                    </div>
+                  </>
+                )}
+
+                {selectedFilterQuestion && selectedFilterQuestion.question_type !== 'multiple_choice' && selectedFilterQuestion.question_type !== 'multiple_select' && selectedFilterQuestion.question_type !== 'media' && selectedFilterQuestion.question_type !== 'number' && selectedFilterQuestion.question_type !== 'float' && (
                   <div className="analytics-filter-field">
                     <label>Text Contains</label>
                     <input
@@ -353,7 +384,9 @@ function createEmptyFilter(id) {
     questionId: '',
     choiceId: '',
     textQuery: '',
-    mediaMode: ''
+    mediaMode: '',
+    numericOperator: '=',
+    numericValue: ''
   }
 }
 
@@ -366,6 +399,10 @@ function isFilterActive(filter, question) {
 
   if (question.question_type === 'media') {
     return Boolean(filter.mediaMode)
+  }
+
+  if (question.question_type === 'number' || question.question_type === 'float') {
+    return (filter.numericValue || '').trim().length > 0
   }
 
   return (filter.textQuery || '').trim().length > 0
@@ -384,6 +421,23 @@ function matchesResponseFilter(response, question, filter) {
     if (!filter.mediaMode) return true
     const hasFile = Boolean(answer?.file_answer)
     return filter.mediaMode === 'with_file' ? hasFile : !hasFile
+  }
+
+  if (question.question_type === 'number' || question.question_type === 'float') {
+    const numericValue = (filter.numericValue || '').trim()
+    if (!numericValue) return true
+    const answerNum = parseFloat(answer?.text_answer)
+    const filterNum = parseFloat(numericValue)
+    if (isNaN(answerNum) || isNaN(filterNum)) return false
+    switch (filter.numericOperator) {
+      case '=':  return answerNum === filterNum
+      case '!=': return answerNum !== filterNum
+      case '>':  return answerNum > filterNum
+      case '>=': return answerNum >= filterNum
+      case '<':  return answerNum < filterNum
+      case '<=': return answerNum <= filterNum
+      default:   return true
+    }
   }
 
   const query = (filter.textQuery || '').trim().toLowerCase()

@@ -178,6 +178,41 @@ class AnswerSerializer(serializers.ModelSerializer):
         model = Answer
         fields = ['id', 'question_id', 'question', 'text_answer', 'file_answer', 'selected_choices']
 
+    def validate(self, data):
+        question = data.get('question')
+        text_answer = data.get('text_answer')
+
+        if question and text_answer is not None and text_answer != '':
+            # Normalise whitespace for all text answers first
+            text_answer = text_answer.strip()
+
+            if question.question_type == 'number':
+                try:
+                    float_val = float(text_answer)
+                    if float_val != int(float_val):
+                        raise serializers.ValidationError(
+                            {'text_answer': 'A whole number is required for this question.'}
+                        )
+                    # Normalise: remove leading zeros, store canonical int string
+                    text_answer = str(int(float_val))
+                except (ValueError, TypeError):
+                    raise serializers.ValidationError(
+                        {'text_answer': 'A valid integer is required for this question.'}
+                    )
+            elif question.question_type == 'float':
+                try:
+                    float_val = float(text_answer)
+                    # Normalise: remove leading/trailing zeros artefacts
+                    text_answer = str(float_val)
+                except (ValueError, TypeError):
+                    raise serializers.ValidationError(
+                        {'text_answer': 'A valid number is required for this question.'}
+                    )
+
+            data['text_answer'] = text_answer
+
+        return data
+
 
 class ResponseSerializer(serializers.ModelSerializer):
     answers = AnswerSerializer(many=True)

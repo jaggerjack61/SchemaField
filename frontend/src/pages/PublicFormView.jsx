@@ -2,6 +2,24 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { getForm, getFormByShareId, submitForm } from '../api'
 
+function normalizeAnswer(question, value) {
+  if (typeof value !== 'string') return value
+  if (question.question_type === 'short_text' || question.question_type === 'long_text') {
+    return value.trim()
+  }
+  if (question.question_type === 'number') {
+    if (value.trim() === '' || value.trim() === '-') return value
+    const n = parseInt(value, 10)
+    return isNaN(n) ? value : String(n)
+  }
+  if (question.question_type === 'float') {
+    if (value.trim() === '' || value.trim() === '-') return value
+    const n = parseFloat(value)
+    return isNaN(n) ? value : String(n)
+  }
+  return value
+}
+
 export default function PublicFormView() {
   const { id, shareId } = useParams()
   const [form, setForm] = useState(null)
@@ -12,6 +30,7 @@ export default function PublicFormView() {
   const [showErrorModal, setShowErrorModal] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [error, setError] = useState(null)
+  const [inputErrors, setInputErrors] = useState({})
 
   useEffect(() => {
     loadForm()
@@ -54,6 +73,22 @@ export default function PublicFormView() {
     }))
   }
 
+  function handleNumberInput(questionId, value) {
+    handleInputChange(questionId, value)
+    if (value.includes('.')) {
+      setInputErrors(prev => ({ ...prev, [questionId]: 'Please enter a whole number — decimals are not allowed.' }))
+    } else {
+      setInputErrors(prev => { const next = { ...prev }; delete next[questionId]; return next })
+    }
+  }
+
+  function handleBlur(question, value) {
+    const normalized = normalizeAnswer(question, value)
+    if (normalized !== value) {
+      handleInputChange(question.id, normalized)
+    }
+  }
+
   function handleChoiceChange(questionId, choiceId, type) {
     setAnswers(prev => {
       const current = prev[questionId] || []
@@ -71,6 +106,7 @@ export default function PublicFormView() {
 
   async function handleSubmit(e) {
     e.preventDefault()
+    if (Object.keys(inputErrors).length > 0) return
     setSubmitting(true)
     
     try {
@@ -99,8 +135,9 @@ export default function PublicFormView() {
           } else {
             // text/number
             if (val) {
+              const normalized = normalizeAnswer(q, val)
               formData.append(`answers[${answerIndex}][question_id]`, q.id)
-              formData.append(`answers[${answerIndex}][text_answer]`, val)
+              formData.append(`answers[${answerIndex}][text_answer]`, normalized)
               answerIndex++
             }
           }
@@ -156,14 +193,26 @@ export default function PublicFormView() {
                 
                 {/* Render Inputs */}
                 {(question.question_type === 'short_text' || question.question_type === 'number' || question.question_type === 'float') && (
-                  <input
-                    type={question.question_type === 'short_text' ? 'text' : 'number'}
-                    step={question.question_type === 'float' ? 'any' : undefined}
-                    required={question.required}
-                    value={answers[question.id] || ''}
-                    onChange={e => handleInputChange(question.id, e.target.value)}
-                    placeholder="Your answer"
-                  />
+                  <>
+                    <input
+                      type={question.question_type === 'short_text' ? 'text' : 'number'}
+                      step={question.question_type === 'float' ? 'any' : question.question_type === 'number' ? '1' : undefined}
+                      required={question.required}
+                      value={answers[question.id] || ''}
+                      onChange={e => question.question_type === 'number'
+                        ? handleNumberInput(question.id, e.target.value)
+                        : handleInputChange(question.id, e.target.value)
+                      }
+                      onBlur={e => handleBlur(question, e.target.value)}
+                      placeholder="Your answer"
+                      style={inputErrors[question.id] ? { borderColor: 'var(--error, #e05252)' } : undefined}
+                    />
+                    {inputErrors[question.id] && (
+                      <span style={{ color: 'var(--error, #e05252)', fontSize: '0.8rem', marginTop: '4px', display: 'block' }}>
+                        {inputErrors[question.id]}
+                      </span>
+                    )}
+                  </>
                 )}
 
                 {question.question_type === 'long_text' && (
@@ -171,6 +220,7 @@ export default function PublicFormView() {
                     required={question.required}
                     value={answers[question.id] || ''}
                     onChange={e => handleInputChange(question.id, e.target.value)}
+                    onBlur={e => handleBlur(question, e.target.value)}
                     placeholder="Your answer"
                     rows={3}
                   />
