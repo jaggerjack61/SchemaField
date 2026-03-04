@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, memo } from 'react'
 import { uploadQuestionMedia } from '../api'
 
 function getMediaType(url) {
@@ -10,7 +10,7 @@ function getMediaType(url) {
   return null
 }
 
-export default function QuestionCard({ question, onChange, onRemove, questionIndex }) {
+function QuestionCard({ question, onChange, onRemove, questionIndex }) {
   const needsChoices = question.question_type === 'multiple_choice' || question.question_type === 'multiple_select'
   const mediaInputRef = useRef(null)
   const [uploading, setUploading] = useState(false)
@@ -44,6 +44,11 @@ export default function QuestionCard({ question, onChange, onRemove, questionInd
   async function handleMediaUpload(e) {
     const file = e.target.files?.[0]
     if (!file) return
+    const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
+    if (file.size > MAX_FILE_SIZE) {
+      console.warn('File too large, max 10 MB')
+      return
+    }
     setUploading(true)
     try {
       const { data } = await uploadQuestionMedia(file)
@@ -207,3 +212,5 @@ export default function QuestionCard({ question, onChange, onRemove, questionInd
     </div>
   )
 }
+
+export default memo(QuestionCard)

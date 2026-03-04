@@ -69,7 +69,7 @@ class Form(models.Model):
             self._generate_qr_code()
 
     def _generate_qr_code(self):
-        url = f'http://localhost:5173/f/{self.share_id}'
+        url = f'{getattr(settings, "FRONTEND_BASE_URL", "http://localhost:5173")}/f/{self.share_id}'
         qr = qrcode.QRCode(version=1, box_size=10, border=4)
         qr.add_data(url)
         qr.make(fit=True)

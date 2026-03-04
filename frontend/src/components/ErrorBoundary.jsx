@@ -19,7 +19,14 @@ class ErrorBoundary extends React.Component {
       return (
         <div style={{ padding: '2rem', color: 'red', background: 'white' }}>
           <h1>Something went wrong.</h1>
-          <pre>{this.state.error && this.state.error.toString()}</pre>
+          {process.env.NODE_ENV === 'development' && this.state.error && (
+            <pre style={{ textAlign: 'left', fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '1rem', maxWidth: '600px', overflow: 'auto' }}>
+              {this.state.error.toString()}
+            </pre>
+          )}
+          {process.env.NODE_ENV !== 'development' && (
+            <p>An unexpected error occurred. Please refresh the page.</p>
+          )}
         </div>
       )
     }

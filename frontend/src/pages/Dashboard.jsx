@@ -8,6 +8,7 @@ const FORMS_PAGE_SIZE = 12
 
 export default function Dashboard() {
   const [forms, setForms] = useState([])
+  const [searchInput, setSearchInput] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
   const [viewMode, setViewMode] = useState('card')
   const [visibleCount, setVisibleCount] = useState(FORMS_PAGE_SIZE)
@@ -21,19 +22,25 @@ export default function Dashboard() {
   const navigate = useNavigate()
 
   useEffect(() => {
-    loadForms()
-  }, [])
+    const timer = setTimeout(() => setSearchTerm(searchInput), 300)
+    return () => clearTimeout(timer)
+  }, [searchInput])
 
-  async function loadForms() {
-    try {
-      const { data } = await getForms()
-      setForms(data)
-    } catch (err) {
-      showToast('Failed to load forms', 'error')
-    } finally {
-      setLoading(false)
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      try {
+        const { data } = await getForms()
+        if (!cancelled) setForms(data.results || data)
+      } catch (err) {
+        if (!cancelled) showToast('Failed to load forms', 'error')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
     }
-  }
+    load()
+    return () => { cancelled = true }
+  }, [])
 
   async function handleDelete() {
     try {
@@ -136,8 +143,8 @@ export default function Dashboard() {
           type="text"
           className="dashboard-search"
           placeholder="Search forms..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
           aria-label="Search forms"
         />
         <div className="view-toggle" role="group" aria-label="View mode">
@@ -208,7 +215,7 @@ export default function Dashboard() {
               </div>
               
               <div style={{ marginTop: '0.5rem' }}>
-                 {form.is_woned ? (
+                 {form.is_owned ? (
                    <span style={{ fontSize: '0.75rem', background: 'rgba(124, 92, 252, 0.2)', color: '#a78bfa', padding: '2px 6px', borderRadius: '4px' }}>Owned</span>
                  ) : (
                    <span style={{ fontSize: '0.75rem', background: 'rgba(255, 255, 255, 0.1)', color: '#ccc', padding: '2px 6px', borderRadius: '4px' }}>
@@ -218,7 +225,7 @@ export default function Dashboard() {
               </div>
 
               <div className="form-card-actions" onClick={(e) => e.stopPropagation()}>
-                {(form.is_woned || form.user_permissions.includes('edit')) && (
+                {(form.is_owned || form.user_permissions.includes('edit')) && (
                   <button
                     className="btn btn-secondary"
                     onClick={() => navigate(`/forms/${form.id}/edit`)}
@@ -242,7 +249,7 @@ export default function Dashboard() {
                   🔗 Share
                 </button>
                 
-                {form.is_woned && (
+                {form.is_owned && (
                   <button
                     className="btn btn-secondary"
                     onClick={() => setManagePermissionsId(form.id)}
@@ -252,7 +259,7 @@ export default function Dashboard() {
                   </button>
                 )}
 
-                {form.is_woned && (
+                {form.is_owned && (
                   <button
                     className="btn btn-danger"
                     onClick={() => setConfirmId(form.id)}

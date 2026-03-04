@@ -37,19 +37,20 @@ export default function FormPreview() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    loadForm()
-  }, [id])
-
-  async function loadForm() {
-    try {
-      const { data } = await getForm(id)
-      setForm(data)
-    } catch (err) {
-      console.error('Failed to load form', err)
-    } finally {
-      setLoading(false)
+    let cancelled = false
+    async function load() {
+      try {
+        const { data } = await getForm(id)
+        if (!cancelled) setForm(data)
+      } catch (err) {
+        if (!cancelled) console.error('Failed to load form', err)
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
     }
-  }
+    load()
+    return () => { cancelled = true }
+  }, [id])
 
   function renderQuestionInput(question) {
     switch (question.question_type) {

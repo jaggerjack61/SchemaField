@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { getForm, getFormResponses, exportFormResponses } from '../api'
 
@@ -11,23 +11,23 @@ export default function FormResponses() {
   const [activeTab, setActiveTab] = useState('summary')
 
   useEffect(() => {
-    loadData()
-  }, [id])
-
-  async function loadData() {
-    try {
-      const [formData, responsesData] = await Promise.all([
-        getForm(id),
-        getFormResponses(id)
-      ])
-      setForm(formData.data)
-      setResponses(responsesData.data)
-    } catch (err) {
-      setError('Failed to load data.')
-    } finally {
-      setLoading(false)
+    let cancelled = false
+    async function load() {
+      try {
+        const [formRes, responsesRes] = await Promise.all([getForm(id), getFormResponses(id)])
+        if (!cancelled) {
+          setForm(formRes.data)
+          setResponses(responsesRes.data.results || responsesRes.data)
+        }
+      } catch (err) {
+        if (!cancelled) setError('Failed to load data.')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
     }
-  }
+    load()
+    return () => { cancelled = true }
+  }, [id])
 
   async function handleExportCSV() {
     try {
@@ -51,16 +51,22 @@ export default function FormResponses() {
   if (error) return <div className="empty-state"><h2>{error}</h2></div>
 
   // Create lookup for questions
-  const questionsMap = {}
-  const choicesMap = {}
-  form.sections.forEach(s => {
-    s.questions.forEach(q => {
-      questionsMap[q.id] = q
-      q.choices.forEach(c => {
-        choicesMap[c.id] = c.text
+  const { questionsMap, choicesMap } = useMemo(() => {
+    const qMap = {}
+    const cMap = {}
+    if (!form) return { questionsMap: qMap, choicesMap: cMap }
+    form.sections.forEach(s => {
+      s.questions.forEach(q => {
+        qMap[q.id] = q
+        if (q.choices) {
+          q.choices.forEach(c => {
+            cMap[c.id] = c.text
+          })
+        }
       })
     })
-  })
+    return { questionsMap: qMap, choicesMap: cMap }
+  }, [form])
 
   return (
     <div className="dashboard">

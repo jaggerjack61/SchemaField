@@ -15,21 +15,21 @@ export default function FormBuilder() {
   const [toast, setToast] = useState(null)
 
   useEffect(() => {
-    if (isEdit) {
-      loadForm()
+    if (!isEdit) return
+    let cancelled = false
+    async function load() {
+      try {
+        const { data } = await getForm(id)
+        if (!cancelled) setForm(data)
+      } catch (err) {
+        if (!cancelled) showToast('Failed to load form', 'error')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
     }
+    load()
+    return () => { cancelled = true }
   }, [id])
-
-  async function loadForm() {
-    try {
-      const { data } = await getForm(id)
-      setForm(data)
-    } catch (err) {
-      showToast('Failed to load form', 'error')
-    } finally {
-      setLoading(false)
-    }
-  }
 
   async function handleSave() {
     setSaving(true)

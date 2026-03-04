@@ -102,21 +102,25 @@ class FormListSerializer(serializers.ModelSerializer):
     question_count = serializers.SerializerMethodField()
     section_count = serializers.SerializerMethodField()
     owner_name = serializers.CharField(source='owner.name', read_only=True)
-    is_woned = serializers.SerializerMethodField()
+    is_owned = serializers.SerializerMethodField()
     user_permissions = serializers.SerializerMethodField()
 
     class Meta:
         model = Form
         fields = ['id', 'title', 'description', 'created_at', 'updated_at',
-                  'section_count', 'question_count', 'share_id', 'qr_code', 'owner_name', 'is_woned', 'user_permissions']
+                  'section_count', 'question_count', 'share_id', 'qr_code', 'owner_name', 'is_owned', 'user_permissions']
 
     def get_section_count(self, obj):
+        if hasattr(obj, '_section_count'):
+            return obj._section_count
         return obj.sections.count()
 
     def get_question_count(self, obj):
+        if hasattr(obj, '_question_count'):
+            return obj._question_count
         return sum(s.questions.count() for s in obj.sections.all())
 
-    def get_is_woned(self, obj):
+    def get_is_owned(self, obj):
         request = self.context.get('request')
         if request and request.user.is_authenticated:
             return obj.owner == request.user
@@ -157,9 +161,73 @@ class FormDetailSerializer(serializers.ModelSerializer):
         instance.description = validated_data.get('description', instance.description)
         instance.save()
 
-        # Replace strategy: delete old sections, create new ones
-        instance.sections.all().delete()
-        self._create_sections(instance, sections_data)
+        # Diff-based update: keep existing sections/questions, create new, delete removed
+        incoming_section_ids = {s.get('id') for s in sections_data if s.get('id')}
+        existing_sections = {s.id: s for s in instance.sections.all()}
+
+        # Delete sections that are no longer in the payload
+        for section_id in existing_sections:
+            if section_id not in incoming_section_ids:
+                existing_sections[section_id].delete()
+
+        for s_data in sections_data:
+            questions_data = s_data.pop('questions', [])
+            section_id = s_data.pop('id', None)
+
+            if section_id and section_id in existing_sections:
+                # Update existing section
+                section = existing_sections[section_id]
+                for attr, val in s_data.items():
+                    setattr(section, attr, val)
+                section.save()
+            else:
+                # Create new section
+                section = Section.objects.create(form=instance, **s_data)
+
+            # Handle questions within this section
+            incoming_q_ids = {q.get('id') for q in questions_data if q.get('id')}
+            existing_questions = {q.id: q for q in section.questions.all()}
+
+            # Delete questions no longer present
+            for q_id in existing_questions:
+                if q_id not in incoming_q_ids:
+                    existing_questions[q_id].delete()
+
+            for q_data in questions_data:
+                choices_data = q_data.pop('choices', [])
+                q_id = q_data.pop('id', None)
+                media_file = q_data.pop('media_file', None) or ''
+                q_data.pop('media_url', None)
+
+                if q_id and q_id in existing_questions:
+                    # Update existing question
+                    question = existing_questions[q_id]
+                    question.media_file = media_file
+                    for attr, val in q_data.items():
+                        setattr(question, attr, val)
+                    question.save()
+                else:
+                    # Create new question
+                    question = Question.objects.create(section=section, media_file=media_file, **q_data)
+
+                # Handle choices
+                incoming_c_ids = {c.get('id') for c in choices_data if c.get('id')}
+                existing_choices = {c.id: c for c in question.choices.all()}
+
+                for c_id in existing_choices:
+                    if c_id not in incoming_c_ids:
+                        existing_choices[c_id].delete()
+
+                for c_data in choices_data:
+                    c_id = c_data.pop('id', None)
+                    if c_id and c_id in existing_choices:
+                        choice = existing_choices[c_id]
+                        for attr, val in c_data.items():
+                            setattr(choice, attr, val)
+                        choice.save()
+                    else:
+                        Choice.objects.create(question=question, **c_data)
+
         return instance
 
     # ---------------------------------------------------------------- helpers
@@ -169,16 +237,29 @@ class FormDetailSerializer(serializers.ModelSerializer):
             questions_data = s_data.pop('questions', [])
             s_data.pop('id', None)
             section = Section.objects.create(form=form, **s_data)
+
+            question_objects = []
+            question_choices_map = []
+
             for q_data in questions_data:
                 choices_data = q_data.pop('choices', [])
                 q_data.pop('id', None)
-                # Handle media_file — accept a relative path string
                 media_file = q_data.pop('media_file', None) or ''
-                q_data.pop('media_url', None)  # read-only computed field
-                question = Question.objects.create(section=section, media_file=media_file, **q_data)
+                q_data.pop('media_url', None)
+                q = Question(section=section, media_file=media_file, **q_data)
+                question_objects.append(q)
+                question_choices_map.append(choices_data)
+
+            created_questions = Question.objects.bulk_create(question_objects)
+
+            all_choices = []
+            for question, choices_data in zip(created_questions, question_choices_map):
                 for c_data in choices_data:
                     c_data.pop('id', None)
-                    Choice.objects.create(question=question, **c_data)
+                    all_choices.append(Choice(question=question, **c_data))
+
+            if all_choices:
+                Choice.objects.bulk_create(all_choices)
 
 
 class AnswerSerializer(serializers.ModelSerializer):

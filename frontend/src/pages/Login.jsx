@@ -7,6 +7,8 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [failCount, setFailCount] = useState(0)
+  const [cooldown, setCooldown] = useState(0)
   const { login, user } = useAuth()
   const navigate = useNavigate()
 
@@ -16,6 +18,12 @@ export default function Login() {
     }
   }, [user, navigate])
 
+  useEffect(() => {
+    if (cooldown <= 0) return
+    const timer = setTimeout(() => setCooldown(c => c - 1), 1000)
+    return () => clearTimeout(timer)
+  }, [cooldown])
+
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
@@ -23,10 +31,16 @@ export default function Login() {
 
     try {
       await login(email, password)
+      setFailCount(0)
       navigate('/dashboard')
     } catch (err) {
       console.error(err)
       setError(err.response?.data?.detail || 'Failed to login')
+      const newFailCount = failCount + 1
+      setFailCount(newFailCount)
+      if (newFailCount >= 3) {
+        setCooldown(30)
+      }
     } finally {
       setLoading(false)
     }
@@ -83,15 +97,13 @@ export default function Login() {
             <button 
               type="submit" 
               className="btn btn-primary btn-block"
-              disabled={loading}
+              disabled={loading || cooldown > 0}
             >
-              {loading ? 'Authenticating...' : 'Sign In'}
+              {cooldown > 0 ? `Too many attempts. Retry in ${cooldown}s` : loading ? 'Authenticating...' : 'Sign In'}
             </button>
           </form>
           
-          <div className="card-footer">
-            <p>Don't have an account? <a href="#">Request Access</a></p>
-          </div>
+
         </div>
       </div>
     </div>

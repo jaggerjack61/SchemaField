@@ -187,7 +187,7 @@ export default function AdminUserManagement() {
             <p>Enter new password for user ID {resetId}</p>
             <form onSubmit={handleResetPassword} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <input
-                type="text"
+                type="password"
                 placeholder="New Password"
                 value={newPassword}
                 onChange={e => setNewPassword(e.target.value)}

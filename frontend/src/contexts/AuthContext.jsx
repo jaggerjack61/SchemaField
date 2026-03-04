@@ -10,23 +10,25 @@ export function AuthProvider({ children }) {
   const navigate = useNavigate()
 
   useEffect(() => {
-    checkAuth()
-  }, [])
-
-  async function checkAuth() {
-    const token = localStorage.getItem('access_token')
-    if (token) {
+    let cancelled = false
+    async function loadUser() {
+      const token = localStorage.getItem('access_token')
+      if (!token) { setLoading(false); return }
       try {
         const { data } = await getMe()
-        setUser(data)
-      } catch (err) {
-        console.error('Auth check failed', err)
-        localStorage.removeItem('access_token')
-        localStorage.removeItem('refresh_token')
+        if (!cancelled) setUser(data)
+      } catch {
+        if (!cancelled) {
+          localStorage.removeItem('access_token')
+          localStorage.removeItem('refresh_token')
+        }
+      } finally {
+        if (!cancelled) setLoading(false)
       }
     }
-    setLoading(false)
-  }
+    loadUser()
+    return () => { cancelled = true }
+  }, [])
 
   async function login(email, password) {
     const { data } = await apiLogin(email, password)

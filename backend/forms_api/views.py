@@ -1,15 +1,21 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response as DRFResponse
+from rest_framework.throttling import AnonRateThrottle
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
 from django.db.models import Q, Count
 from django.contrib.auth import get_user_model
 from django.conf import settings
+from django.http import StreamingHttpResponse
 
 from pathlib import Path
+import csv
+import io
+import os
 import shutil
+import uuid as _uuid
 from datetime import datetime, timezone as dt_timezone
 
 from .models import Form, FormPermission, Answer, Question
@@ -42,12 +48,25 @@ class UploadQuestionMediaView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # Validate file extension
+        allowed_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg',
+                              '.mp4', '.webm', '.ogv',
+                              '.mp3', '.ogg', '.wav', '.m4a']
+        ext = os.path.splitext(file.name)[1].lower()
+        if ext not in allowed_extensions:
+            return DRFResponse({'detail': f'Unsupported file extension: {ext}'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validate file size
+        if file.size > 10 * 1024 * 1024:  # 10 MB
+            return DRFResponse({'detail': 'File too large. Maximum size is 10 MB.'}, status=status.HTTP_400_BAD_REQUEST)
+
         # Save using a temporary Question-like path
         from django.core.files.storage import default_storage
         from datetime import date
 
         today = date.today()
-        path = f'question_media/{today.year}/{today.month:02d}/{today.day:02d}/{file.name}'
+        safe_name = f'{_uuid.uuid4().hex}{ext}'
+        path = f'question_media/{today.year}/{today.month:02d}/{today.day:02d}/{safe_name}'
         saved_path = default_storage.save(path, file)
 
         url = request.build_absolute_uri(f'{settings.MEDIA_URL}{saved_path}')
@@ -60,8 +79,13 @@ class UploadQuestionMediaView(APIView):
 User = get_user_model()
 
 
+class LoginRateThrottle(AnonRateThrottle):
+    rate = '5/min'
+
+
 class LoginView(TokenObtainPairView):
     serializer_class = LoginSerializer
+    throttle_classes = [LoginRateThrottle]
 
 
 class MeView(APIView):
@@ -272,6 +296,8 @@ class UserViewSet(viewsets.ModelViewSet):
         linked_answers = Answer.objects.filter(file_answer=relative_path)
         linked_answers.update(file_answer=None)
 
+        Question.objects.filter(media_file=relative_path).update(media_file='')
+
         file_path.unlink()
 
         return DRFResponse({
@@ -342,12 +368,20 @@ class FormViewSet(viewsets.ModelViewSet):
             return Form.objects.none()
 
         if user.role == 'admin':
-            return Form.objects.all()
+            qs = Form.objects.all()
+        else:
+            # Regular user: owned forms + shared forms
+            owned_forms = Form.objects.filter(owner=user)
+            shared_forms = Form.objects.filter(permissions__user=user)
+            qs = (owned_forms | shared_forms).distinct().order_by('-updated_at')
 
-        # Regular user: owned forms + shared forms
-        owned_forms = Form.objects.filter(owner=user)
-        shared_forms = Form.objects.filter(permissions__user=user)
-        return (owned_forms | shared_forms).distinct().order_by('-updated_at')
+        if self.action == 'list':
+            qs = qs.select_related('owner').annotate(
+                _section_count=Count('sections', distinct=True),
+                _question_count=Count('sections__questions', distinct=True)
+            ).prefetch_related('permissions')
+
+        return qs
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -417,10 +451,6 @@ class FormViewSet(viewsets.ModelViewSet):
     def submit(self, request, pk=None):
         # Public access allowed
         form = self.get_object()
-    @action(detail=True, methods=['post'])
-    def submit(self, request, pk=None):
-        # Public access allowed
-        form = self.get_object()
         
         # Construct data for serializer manually to avoid QueryDict issues with nested data
         data = {'form': form.id}
@@ -476,10 +506,6 @@ class FormViewSet(viewsets.ModelViewSet):
             serializer.save()
             return DRFResponse(serializer.data, status=201)
         return DRFResponse(serializer.errors, status=400)
-        if serializer.is_valid():
-            serializer.save()
-            return DRFResponse(serializer.data, status=201)
-        return DRFResponse(serializer.errors, status=400)
 
     @action(detail=True, methods=['get'])
     def responses(self, request, pk=None):
@@ -494,64 +520,51 @@ class FormViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'])
     def export_csv(self, request, pk=None):
-        import csv
-        from django.http import HttpResponse
-
         form = self.get_object()
-        
-        # Create the HttpResponse object with the appropriate CSV header.
-        response = HttpResponse(content_type='text/csv')
-        response['Content-Disposition'] = f'attachment; filename="{form.title}_responses.csv"'
 
-        writer = csv.writer(response)
-        
-        # Build headers
-        # Static headers
-        headers = ['Response ID', 'Submitted At']
-        
-        # Dynamic headers based on questions (ordered)
-        questions = []
-        for section in form.sections.all():
-            for question in section.questions.all():
-                headers.append(question.text)
-                questions.append(question)
-        
-        writer.writerow(headers)
+        def csv_rows():
+            output = io.StringIO()
+            writer = csv.writer(output)
 
-        # Build rows
-        responses = form.responses.prefetch_related(
-            'answers__question', 'answers__selected_choices'
-        ).order_by('-created_at')
+            # Headers
+            headers = ['Response ID', 'Submitted At']
+            questions = []
+            for section in form.sections.prefetch_related('questions').all():
+                for question in section.questions.all():
+                    headers.append(question.text)
+                    questions.append(question)
+            writer.writerow(headers)
+            yield output.getvalue()
+            output.seek(0)
+            output.truncate(0)
 
-        for r in responses:
-            row = [r.id, r.created_at.strftime('%Y-%m-%d %H:%M:%S')]
-            
-            # Map answers to questions
-            # We can't just iterate answers because they might be sparse or unordered
-            # So we iterate the known questions and find the matching answer
-            answers_map = {a.question_id: a for a in r.answers.all()}
-            
-            for q in questions:
-                answer = answers_map.get(q.id)
-                if not answer:
-                    row.append('')
-                    continue
-                
-                if q.question_type in ['multiple_choice', 'multiple_select']:
-                    # Join selected choice texts
-                    choices = [c.text for c in answer.selected_choices.all()]
-                    row.append(', '.join(choices))
-                elif q.question_type == 'media':
-                    if answer.file_answer:
-                        # Return absolute URL if possible, or relative
-                        row.append(request.build_absolute_uri(answer.file_answer.url))
-                    else:
+            # Rows
+            responses = form.responses.prefetch_related(
+                'answers__question', 'answers__selected_choices'
+            ).order_by('-created_at')
+
+            for r in responses.iterator():
+                row = [r.id, r.created_at.strftime('%Y-%m-%d %H:%M:%S')]
+                answers_map = {a.question_id: a for a in r.answers.all()}
+                for q in questions:
+                    answer = answers_map.get(q.id)
+                    if not answer:
                         row.append('')
-                else:
-                    row.append(answer.text_answer or '')
-            
-            writer.writerow(row)
+                    elif q.question_type in ['multiple_choice', 'multiple_select']:
+                        choices = [c.text for c in answer.selected_choices.all()]
+                        row.append(', '.join(choices))
+                    elif q.question_type == 'media':
+                        row.append(request.build_absolute_uri(answer.file_answer.url) if answer.file_answer else '')
+                    else:
+                        row.append(answer.text_answer or '')
+                writer.writerow(row)
+                yield output.getvalue()
+                output.seek(0)
+                output.truncate(0)
 
+        safe_title = form.title.replace('"', '').replace('\r', '').replace('\n', '')[:100]
+        response = StreamingHttpResponse(csv_rows(), content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="{safe_title}_responses.csv"'
         return response
 
 

@@ -62,38 +62,41 @@ export default function PublicFormView() {
   const [inputErrors, setInputErrors] = useState({})
 
   useEffect(() => {
-    loadForm()
-  }, [id, shareId])
-
-  async function loadForm() {
-    try {
-      let data
-      if (shareId) {
-        const res = await getFormByShareId(shareId)
-        data = res.data
-      } else {
-        const res = await getForm(id)
-        data = res.data
+    let cancelled = false
+    async function load() {
+      try {
+        let data
+        if (shareId) {
+          const res = await getFormByShareId(shareId)
+          data = res.data
+        } else {
+          const res = await getForm(id)
+          data = res.data
+        }
+        if (!cancelled) {
+          setForm(data)
+          // Initialize answers state
+          const initialAnswers = {}
+          data.sections.forEach(section => {
+            section.questions.forEach(q => {
+              if (q.question_type === 'multiple_choice' || q.question_type === 'multiple_select') {
+                 initialAnswers[q.id] = []
+              } else {
+                 initialAnswers[q.id] = ''
+              }
+            })
+          })
+          setAnswers(initialAnswers)
+        }
+      } catch (err) {
+        if (!cancelled) setError('Failed to load form. It may not exist.')
+      } finally {
+        if (!cancelled) setLoading(false)
       }
-      setForm(data)
-      // Initialize answers state
-      const initialAnswers = {}
-      data.sections.forEach(section => {
-        section.questions.forEach(q => {
-          if (q.question_type === 'multiple_choice' || q.question_type === 'multiple_select') {
-             initialAnswers[q.id] = []
-          } else {
-             initialAnswers[q.id] = ''
-          }
-        })
-      })
-      setAnswers(initialAnswers)
-    } catch (err) {
-      setError('Failed to load form. It may not exist.')
-    } finally {
-      setLoading(false)
     }
-  }
+    load()
+    return () => { cancelled = true }
+  }, [id, shareId])
 
   function handleInputChange(questionId, value) {
     setAnswers(prev => ({
@@ -278,7 +281,16 @@ export default function PublicFormView() {
                      <input 
                        type="file" 
                        required={question.required}
-                       onChange={e => handleInputChange(question.id, e.target.files[0])}
+                       accept="image/*,video/*,audio/*"
+                       onChange={e => {
+                         const file = e.target.files[0]
+                         if (file && file.size > 10 * 1024 * 1024) {
+                           alert('File too large. Maximum size is 10 MB.')
+                           e.target.value = ''
+                           return
+                         }
+                         handleInputChange(question.id, file)
+                       }}
                      />
                    </div>
                 )}

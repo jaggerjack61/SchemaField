@@ -1,6 +1,7 @@
+import { memo } from 'react'
 import QuestionCard from './QuestionCard'
 
-export default function SectionCard({ section, sectionIndex, onChange, onRemove }) {
+function SectionCard({ section, sectionIndex, onChange, onRemove }) {
   function updateField(field, value) {
     onChange({ ...section, [field]: value })
   }
@@ -76,3 +77,5 @@ export default function SectionCard({ section, sectionIndex, onChange, onRemove 
     </div>
   )
 }
+
+export default memo(SectionCard)

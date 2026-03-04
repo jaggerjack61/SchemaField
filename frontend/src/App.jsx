@@ -1,18 +1,20 @@
+import { Suspense, lazy } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import Navbar from './components/Navbar'
-import Login from './pages/Login'
-import Dashboard from './pages/Dashboard'
-import FormBuilder from './pages/FormBuilder'
-import FormPreview from './pages/FormPreview'
-import PublicFormView from './pages/PublicFormView'
-import FormResponses from './pages/FormResponses'
-import FormAnalytics from './pages/FormAnalytics'
-import AdminPanel from './pages/AdminPanel'
-import AdminUserManagement from './pages/AdminUserManagement'
-import AdminFileManagement from './pages/AdminFileManagement'
-import LandingPage from './pages/LandingPage'
+
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const FormBuilder = lazy(() => import('./pages/FormBuilder'))
+const FormPreview = lazy(() => import('./pages/FormPreview'))
+const PublicFormView = lazy(() => import('./pages/PublicFormView'))
+const FormResponses = lazy(() => import('./pages/FormResponses'))
+const FormAnalytics = lazy(() => import('./pages/FormAnalytics'))
+const Login = lazy(() => import('./pages/Login'))
+const LandingPage = lazy(() => import('./pages/LandingPage'))
+const AdminPanel = lazy(() => import('./pages/AdminPanel'))
+const AdminUserManagement = lazy(() => import('./pages/AdminUserManagement'))
+const AdminFileManagement = lazy(() => import('./pages/AdminFileManagement'))
 
 function App() {
   return (
@@ -20,6 +22,7 @@ function App() {
       <div className="app">
         <Navbar />
         <main className="main-content">
+          <Suspense fallback={<div className="loading"><div className="spinner" /></div>}>
           <Routes>
             {/* Public Routes */}
             <Route path="/" element={<LandingPage />} />
@@ -44,6 +47,7 @@ function App() {
               <Route path="/admin/files" element={<AdminFileManagement />} />
             </Route>
           </Routes>
+          </Suspense>
         </main>
       </div>
     </AuthProvider>

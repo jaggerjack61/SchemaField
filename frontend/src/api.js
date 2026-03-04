@@ -22,7 +22,6 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config
     
-    // If 401 and not already retrying
     if (error.response?.status === 401 && !originalRequest._retry) {
       const url = originalRequest?.url ?? ''
       const isAuthRequest =
@@ -30,13 +29,30 @@ api.interceptors.response.use(
         url.includes('/auth/register/') ||
         url.includes('/auth/token/') ||
         url.includes('/auth/refresh/')
-      const hasAccessToken = Boolean(localStorage.getItem('access_token'))
 
-      if (!isAuthRequest && hasAccessToken) {
-        localStorage.removeItem('access_token')
-        localStorage.removeItem('refresh_token')
-        if (window.location.pathname !== '/login') {
-          window.location.href = '/login'
+      if (!isAuthRequest) {
+        const refreshToken = localStorage.getItem('refresh_token')
+        if (refreshToken) {
+          originalRequest._retry = true
+          try {
+            const { data } = await axios.post('/api/auth/token/refresh/', { refresh: refreshToken })
+            localStorage.setItem('access_token', data.access)
+            originalRequest.headers.Authorization = 'Bearer ' + data.access
+            return api(originalRequest)
+          } catch (refreshError) {
+            // Refresh failed — log out
+            localStorage.removeItem('access_token')
+            localStorage.removeItem('refresh_token')
+            if (window.location.pathname !== '/login') {
+              window.location.href = '/login'
+            }
+            return Promise.reject(refreshError)
+          }
+        } else {
+          localStorage.removeItem('access_token')
+          if (window.location.pathname !== '/login') {
+            window.location.href = '/login'
+          }
         }
       }
     }
