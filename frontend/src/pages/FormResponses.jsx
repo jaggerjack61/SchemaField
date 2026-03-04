@@ -29,28 +29,7 @@ export default function FormResponses() {
     return () => { cancelled = true }
   }, [id])
 
-  async function handleExportCSV() {
-    try {
-      const response = await exportFormResponses(id)
-      
-      // Create a blob link to download
-      const url = window.URL.createObjectURL(new Blob([response.data]))
-      const link = document.createElement('a')
-      link.href = url
-      link.setAttribute('download', `${form.title}_responses.csv`)
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-    } catch (err) {
-      console.error('Failed to export CSV', err)
-      alert('Failed to export CSV')
-    }
-  }
-
-  if (loading) return <div className="loading"><div className="spinner" /></div>
-  if (error) return <div className="empty-state"><h2>{error}</h2></div>
-
-  // Create lookup for questions
+  // Create lookup for questions — must be before any early returns
   const { questionsMap, choicesMap } = useMemo(() => {
     const qMap = {}
     const cMap = {}
@@ -67,6 +46,26 @@ export default function FormResponses() {
     })
     return { questionsMap: qMap, choicesMap: cMap }
   }, [form])
+
+  async function handleExportCSV() {
+    try {
+      const response = await exportFormResponses(id)
+      
+      const url = window.URL.createObjectURL(new Blob([response.data]))
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `${form.title}_responses.csv`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+    } catch (err) {
+      console.error('Failed to export CSV', err)
+      alert('Failed to export CSV')
+    }
+  }
+
+  if (loading) return <div className="loading"><div className="spinner" /></div>
+  if (error) return <div className="empty-state"><h2>{error}</h2></div>
 
   return (
     <div className="dashboard">

@@ -91,7 +91,7 @@ export default function Dashboard() {
     return [form.title, form.description, form.owner_name]
       .filter(Boolean)
       .some((value) => value.toLowerCase().includes(normalizedSearchTerm))
-  })
+  }).sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))
   const visibleForms = filteredForms.slice(0, visibleCount)
   const hasMoreForms = visibleCount < filteredForms.length
 

@@ -33,7 +33,8 @@ export default function FormAnalytics() {
         getFormResponses(id)
       ])
       setForm(formData.data)
-      setResponses(responsesData.data)
+      const rData = responsesData.data
+      setResponses(rData.results || rData)
     } catch (err) {
       setError('Failed to load analytics data.')
     } finally {

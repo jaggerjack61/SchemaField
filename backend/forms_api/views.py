@@ -100,6 +100,7 @@ class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
     permission_classes = [IsAdmin]
+    pagination_class = None
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -571,6 +572,7 @@ class FormViewSet(viewsets.ModelViewSet):
 class FormPermissionViewSet(viewsets.ModelViewSet):
     serializer_class = FormPermissionSerializer
     permission_classes = [permissions.IsAuthenticated]
+    pagination_class = None
 
     def get_queryset(self):
         # Only permissions for forms owned by current user
