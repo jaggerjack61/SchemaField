@@ -13,10 +13,20 @@ class ChoiceSerializer(serializers.ModelSerializer):
 class QuestionSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(required=False)
     choices = ChoiceSerializer(many=True, required=False, default=[])
+    media_file = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    media_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Question
-        fields = ['id', 'text', 'question_type', 'required', 'order', 'choices']
+        fields = ['id', 'text', 'question_type', 'required', 'order', 'choices', 'media_file', 'media_url']
+
+    def get_media_url(self, obj):
+        if obj.media_file:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.media_file.url)
+            return obj.media_file.url
+        return None
 
 
 class SectionSerializer(serializers.ModelSerializer):
@@ -162,7 +172,10 @@ class FormDetailSerializer(serializers.ModelSerializer):
             for q_data in questions_data:
                 choices_data = q_data.pop('choices', [])
                 q_data.pop('id', None)
-                question = Question.objects.create(section=section, **q_data)
+                # Handle media_file — accept a relative path string
+                media_file = q_data.pop('media_file', None) or ''
+                q_data.pop('media_url', None)  # read-only computed field
+                question = Question.objects.create(section=section, media_file=media_file, **q_data)
                 for c_data in choices_data:
                     c_data.pop('id', None)
                     Choice.objects.create(question=question, **c_data)

@@ -1,5 +1,19 @@
+import { useState, useRef } from 'react'
+import { uploadQuestionMedia } from '../api'
+
+function getMediaType(url) {
+  if (!url) return null
+  const ext = url.split('.').pop().split('?')[0].toLowerCase()
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) return 'image'
+  if (['mp4', 'webm', 'ogg'].includes(ext)) return 'video'
+  if (['mp3', 'wav', 'ogg', 'webm', 'm4a'].includes(ext)) return 'audio'
+  return null
+}
+
 export default function QuestionCard({ question, onChange, onRemove, questionIndex }) {
   const needsChoices = question.question_type === 'multiple_choice' || question.question_type === 'multiple_select'
+  const mediaInputRef = useRef(null)
+  const [uploading, setUploading] = useState(false)
 
   function updateField(field, value) {
     onChange({ ...question, [field]: value })
@@ -27,6 +41,24 @@ export default function QuestionCard({ question, onChange, onRemove, questionInd
     onChange({ ...question, choices: newChoices })
   }
 
+  async function handleMediaUpload(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    try {
+      const { data } = await uploadQuestionMedia(file)
+      onChange({ ...question, media_file: data.path, media_url: data.url })
+    } catch (err) {
+      console.error('Failed to upload media', err)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  function removeMedia() {
+    onChange({ ...question, media_file: '', media_url: null })
+  }
+
   function getTypePreviewText() {
     switch (question.question_type) {
       case 'short_text': return '📝 Short text answer'
@@ -37,6 +69,9 @@ export default function QuestionCard({ question, onChange, onRemove, questionInd
       default: return ''
     }
   }
+
+  const mediaUrl = question.media_url || (question.media_file ? `/media/${question.media_file}` : null)
+  const mediaType = getMediaType(mediaUrl)
 
   return (
     <div className="question-card">
@@ -68,6 +103,54 @@ export default function QuestionCard({ question, onChange, onRemove, questionInd
           <option value="multiple_select">Multiple Select</option>
           <option value="media">Media</option>
         </select>
+      </div>
+
+      {/* Media attachment area */}
+      <div className="question-media-section">
+        {mediaUrl ? (
+          <div className="question-media-preview">
+            {mediaType === 'image' && (
+              <img src={mediaUrl} alt="Question media" style={{ maxWidth: '100%', maxHeight: '240px', borderRadius: '8px' }} />
+            )}
+            {mediaType === 'video' && (
+              <video src={mediaUrl} controls style={{ maxWidth: '100%', maxHeight: '240px', borderRadius: '8px' }} />
+            )}
+            {mediaType === 'audio' && (
+              <audio src={mediaUrl} controls style={{ width: '100%' }} />
+            )}
+            {!mediaType && (
+              <div style={{ padding: '12px', background: 'var(--surface-2, #2a2a3d)', borderRadius: '8px', fontSize: '0.85rem' }}>
+                📎 Attached file: {question.media_file?.split('/').pop()}
+              </div>
+            )}
+            <button
+              className="btn btn-danger"
+              onClick={removeMedia}
+              title="Remove media"
+              style={{ marginTop: '6px', fontSize: '0.8rem', padding: '4px 12px' }}
+            >
+              ✕ Remove
+            </button>
+          </div>
+        ) : (
+          <div className="question-media-upload">
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => mediaInputRef.current?.click()}
+              disabled={uploading}
+              style={{ fontSize: '0.8rem', padding: '4px 10px' }}
+            >
+              {uploading ? '⏳ Uploading…' : '📷 Attach Media'}
+            </button>
+            <input
+              ref={mediaInputRef}
+              type="file"
+              accept="image/*,video/*,audio/*"
+              onChange={handleMediaUpload}
+              style={{ display: 'none' }}
+            />
+          </div>
+        )}
       </div>
 
       {/* Choices editor for MC / MS */}

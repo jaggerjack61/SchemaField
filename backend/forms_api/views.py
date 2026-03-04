@@ -12,13 +12,50 @@ from pathlib import Path
 import shutil
 from datetime import datetime, timezone as dt_timezone
 
-from .models import Form, FormPermission, Answer
+from .models import Form, FormPermission, Answer, Question
 from .serializers import (
     FormListSerializer, FormDetailSerializer, ResponseSerializer,
     UserSerializer, LoginSerializer, CreateUserSerializer, 
     ResetPasswordSerializer, FormPermissionSerializer
 )
 from .permissions import IsAdmin, IsFormOwner, HasFormPermission
+
+
+class UploadQuestionMediaView(APIView):
+    """Upload a media file (image/video/audio) to attach to a question."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        file = request.FILES.get('file')
+        if not file:
+            return DRFResponse({'detail': 'No file provided.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validate file type
+        allowed_types = [
+            'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
+            'video/mp4', 'video/webm', 'video/ogg',
+            'audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/webm', 'audio/mp4',
+        ]
+        if file.content_type not in allowed_types:
+            return DRFResponse(
+                {'detail': f'Unsupported file type: {file.content_type}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Save using a temporary Question-like path
+        from django.core.files.storage import default_storage
+        from datetime import date
+
+        today = date.today()
+        path = f'question_media/{today.year}/{today.month:02d}/{today.day:02d}/{file.name}'
+        saved_path = default_storage.save(path, file)
+
+        url = request.build_absolute_uri(f'{settings.MEDIA_URL}{saved_path}')
+
+        return DRFResponse({
+            'path': saved_path,
+            'url': url,
+        }, status=status.HTTP_201_CREATED)
 
 User = get_user_model()
 
@@ -71,7 +108,10 @@ class UserViewSet(viewsets.ModelViewSet):
         referenced_qrcode_files = set(
             Form.objects.exclude(qr_code='').exclude(qr_code__isnull=True).values_list('qr_code', flat=True)
         )
-        referenced_files = referenced_upload_files | referenced_qrcode_files
+        referenced_question_media = set(
+            Question.objects.exclude(media_file='').exclude(media_file__isnull=True).values_list('media_file', flat=True)
+        )
+        referenced_files = referenced_upload_files | referenced_qrcode_files | referenced_question_media
 
         orphaned_files = []
         for root in [uploads_root, qrcodes_root]:
@@ -156,6 +196,27 @@ class UserViewSet(viewsets.ModelViewSet):
             for row in answer_file_rows
         }
 
+        # Also map question media files to their parent form
+        question_media_rows = Question.objects.exclude(
+            media_file=''
+        ).exclude(
+            media_file__isnull=True
+        ).values(
+            'media_file',
+            'section__form__id',
+            'section__form__title'
+        )
+        question_media_map = {
+            row['media_file']: {
+                'form_id': row['section__form__id'],
+                'form_title': row['section__form__title'],
+            }
+            for row in question_media_rows
+        }
+
+        # Merge both maps (answer_map takes priority)
+        file_map = {**question_media_map, **answer_map}
+
         directories = []
         files = []
 
@@ -169,7 +230,7 @@ class UserViewSet(viewsets.ModelViewSet):
                 continue
 
             stat_info = entry.stat()
-            related = answer_map.get(rel)
+            related = file_map.get(rel)
             files.append({
                 'name': entry.name,
                 'path': rel,

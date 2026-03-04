@@ -264,6 +264,28 @@
   border-color: rgba(124, 92, 252, 0.2);
 }
 
+/* Question media attachment */
+.question-media-section {
+  margin: 8px 0 4px;
+}
+
+.question-media-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.question-media-preview img,
+.question-media-preview video {
+  border: 1px solid var(--border);
+}
+
+.question-media-upload {
+  display: flex;
+  align-items: center;
+}
+
 .question-top-row {
   display: flex;
   gap: 12px;

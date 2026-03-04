@@ -112,6 +112,8 @@ export default function FormBuilder() {
               question_type: questionType,
               required: Boolean(question?.required),
               order: questionIndex,
+              media_file: question?.media_file || '',
+              media_url: question?.media_url || null,
               choices: choices.map((choice, choiceIndex) => ({
                 text:
                   typeof choice?.text === 'string' && choice.text.trim()

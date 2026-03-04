@@ -112,6 +112,7 @@ class Question(models.Model):
     question_type = models.CharField(max_length=20, choices=QUESTION_TYPES, default='short_text')
     required = models.BooleanField(default=False)
     order = models.PositiveIntegerField(default=0)
+    media_file = models.FileField(upload_to='question_media/%Y/%m/%d/', blank=True, null=True)
 
     class Meta:
         ordering = ['order']

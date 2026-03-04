@@ -2,6 +2,35 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { getForm, getFormByShareId, submitForm } from '../api'
 
+function getMediaType(url) {
+  if (!url) return null
+  const ext = url.split('.').pop().split('?')[0].toLowerCase()
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) return 'image'
+  if (['mp4', 'webm', 'ogg'].includes(ext)) return 'video'
+  if (['mp3', 'wav', 'ogg', 'webm', 'm4a'].includes(ext)) return 'audio'
+  return null
+}
+
+function QuestionMedia({ question }) {
+  const mediaUrl = question.media_url || (question.media_file ? `/media/${question.media_file}` : null)
+  const mediaType = getMediaType(mediaUrl)
+  if (!mediaUrl) return null
+
+  return (
+    <div className="question-media-display" style={{ margin: '10px 0' }}>
+      {mediaType === 'image' && (
+        <img src={mediaUrl} alt="Question media" style={{ maxWidth: '100%', maxHeight: '320px', borderRadius: '8px' }} />
+      )}
+      {mediaType === 'video' && (
+        <video src={mediaUrl} controls style={{ maxWidth: '100%', maxHeight: '320px', borderRadius: '8px' }} />
+      )}
+      {mediaType === 'audio' && (
+        <audio src={mediaUrl} controls style={{ width: '100%' }} />
+      )}
+    </div>
+  )
+}
+
 function normalizeAnswer(question, value) {
   if (typeof value !== 'string') return value
   if (question.question_type === 'short_text' || question.question_type === 'long_text') {
@@ -190,6 +219,7 @@ export default function PublicFormView() {
                   {question.text}
                   {question.required && <span className="required-star">*</span>}
                 </label>
+                <QuestionMedia question={question} />
                 
                 {/* Render Inputs */}
                 {(question.question_type === 'short_text' || question.question_type === 'number' || question.question_type === 'float') && (

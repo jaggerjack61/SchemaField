@@ -58,6 +58,13 @@ export const submitForm = (id, data) => api.post('/forms/' + id + '/submit/', da
 export const getFormResponses = (id) => api.get('/forms/' + id + '/responses/')
 export const exportFormResponses = (id) => api.get('/forms/' + id + '/export_csv/', { responseType: 'blob' })  // Expect binary data
 
+// Question media upload
+export const uploadQuestionMedia = (file) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  return api.post('/upload-question-media/', formData)
+}
+
 // Users (Admin)
 export const getUsers = () => api.get('/users/')
 export const createUser = (data) => api.post('/users/', data)
