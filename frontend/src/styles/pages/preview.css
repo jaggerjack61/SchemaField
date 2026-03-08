@@ -25,6 +25,46 @@
   font-size: 0.95rem;
 }
 
+.form-deadline-banner {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: var(--accent-subtle);
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.form-deadline-banner.is-closed {
+  background: rgba(224, 82, 82, 0.12);
+  color: var(--danger);
+}
+
+.preview-closed-state {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 48px 32px;
+  text-align: center;
+}
+
+.preview-closed-state .empty-icon {
+  font-size: 2.5rem;
+  margin-bottom: 12px;
+}
+
+.preview-closed-state h2 {
+  margin-bottom: 8px;
+}
+
+.preview-closed-state p {
+  color: var(--text-secondary);
+  max-width: 520px;
+  margin: 0 auto;
+}
+
 .preview-section {
   background: var(--bg-card);
   border: 1px solid var(--border);

@@ -20,7 +20,7 @@ export default function FormResponses() {
           setResponses(responsesRes.data.results || responsesRes.data)
         }
       } catch (err) {
-        if (!cancelled) setError('Failed to load data.')
+        if (!cancelled) setError(err.response?.data?.detail || 'Failed to load data.')
       } finally {
         if (!cancelled) setLoading(false)
       }

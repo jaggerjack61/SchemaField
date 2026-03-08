@@ -144,7 +144,7 @@ class FormDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Form
-        fields = ['id', 'title', 'description', 'created_at', 'updated_at', 'sections', 'share_id', 'qr_code']
+        fields = ['id', 'title', 'description', 'deadline', 'created_at', 'updated_at', 'sections', 'share_id', 'qr_code']
         read_only_fields = ['created_at', 'updated_at', 'share_id', 'qr_code']
 
     # ------------------------------------------------------------------ create
@@ -159,6 +159,7 @@ class FormDetailSerializer(serializers.ModelSerializer):
         sections_data = validated_data.pop('sections', [])
         instance.title = validated_data.get('title', instance.title)
         instance.description = validated_data.get('description', instance.description)
+        instance.deadline = validated_data.get('deadline', instance.deadline)
         instance.save()
 
         # Diff-based update: keep existing sections/questions, create new, delete removed

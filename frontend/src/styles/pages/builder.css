@@ -43,6 +43,41 @@
   color: var(--text-secondary);
 }
 
+.form-deadline-row {
+  margin-top: 18px;
+}
+
+.form-deadline-label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.form-deadline-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.builder-header input.form-deadline-input {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  margin-bottom: 0;
+}
+
+.form-deadline-help {
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
 .builder-actions {
   display: flex;
   gap: 12px;
