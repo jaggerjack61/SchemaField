@@ -3,6 +3,22 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { getForm, createForm, updateForm } from '../api'
 import SectionCard from '../components/SectionCard'
 
+function formatDateTimeInputValue(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+
+  const pad = (part) => String(part).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+function serializeFormPayload(form) {
+  return {
+    ...form,
+    deadline: form.deadline ? new Date(form.deadline).toISOString() : null,
+  }
+}
+
 export default function FormBuilder() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -20,7 +36,12 @@ export default function FormBuilder() {
     async function load() {
       try {
         const { data } = await getForm(id)
-        if (!cancelled) setForm(data)
+        if (!cancelled) {
+          setForm({
+            ...data,
+            deadline: formatDateTimeInputValue(data.deadline),
+          })
+        }
       } catch (err) {
         if (!cancelled) showToast('Failed to load form', 'error')
       } finally {
@@ -34,11 +55,12 @@ export default function FormBuilder() {
   async function handleSave() {
     setSaving(true)
     try {
+      const payload = serializeFormPayload(form)
       if (isEdit) {
-        await updateForm(id, form)
+        await updateForm(id, payload)
         showToast('Form updated!', 'success')
       } else {
-        const { data } = await createForm(form)
+        const { data } = await createForm(payload)
         showToast('Form created!', 'success')
         setTimeout(() => navigate(`/forms/${data.id}/edit`), 500)
       }
@@ -60,6 +82,7 @@ export default function FormBuilder() {
     return {
       title: 'Untitled Form',
       description: '',
+      deadline: '',
       sections: [
         {
           title: 'Section 1',
@@ -87,6 +110,7 @@ export default function FormBuilder() {
     const title =
       typeof raw.title === 'string' && raw.title.trim() ? raw.title.trim() : 'Untitled Form'
     const description = typeof raw.description === 'string' ? raw.description : ''
+    const deadline = formatDateTimeInputValue(raw.deadline)
     const sections = Array.isArray(raw.sections) ? raw.sections : []
     const normalizedSections = sections.length
       ? sections.map((section, sectionIndex) => {
@@ -132,7 +156,7 @@ export default function FormBuilder() {
         })
       : getDefaultForm().sections
 
-    return { title, description, sections: normalizedSections }
+    return { title, description, deadline, sections: normalizedSections }
   }
 
   function buildTemplate(formData) {
@@ -141,9 +165,10 @@ export default function FormBuilder() {
         ? formData.title.trim()
         : 'Untitled Form'
     const description = typeof formData?.description === 'string' ? formData.description : ''
+    const deadline = formData?.deadline ? new Date(formData.deadline).toISOString() : null
     const sections = Array.isArray(formData?.sections) ? formData.sections : []
 
-    return normalizeTemplate({ title, description, sections })
+    return normalizeTemplate({ title, description, deadline, sections })
   }
 
   function getTemplateFileName(formData) {
@@ -258,6 +283,32 @@ export default function FormBuilder() {
           placeholder="Form description (optional)"
           rows={2}
         />
+        <div className="form-deadline-row">
+          <label className="form-deadline-label" htmlFor="form-deadline">
+            Submission deadline
+          </label>
+          <div className="form-deadline-controls">
+            <input
+              id="form-deadline"
+              className="form-deadline-input"
+              type="datetime-local"
+              value={form.deadline || ''}
+              onChange={(e) => setForm({ ...form, deadline: e.target.value })}
+            />
+            {form.deadline && (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setForm({ ...form, deadline: '' })}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          <p className="form-deadline-help">
+            Leave blank to keep the form open indefinitely.
+          </p>
+        </div>
       </div>
 
       {/* Action buttons */}

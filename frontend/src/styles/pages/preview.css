@@ -28,35 +28,59 @@
 .form-deadline-banner {
   display: inline-flex;
   align-items: center;
-  margin-top: 12px;
-  padding: 8px 12px;
-  border-radius: 999px;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 7px 14px;
+  border-radius: var(--radius-md);
   background: var(--accent-subtle);
   color: var(--text-secondary);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   font-weight: 600;
+  letter-spacing: 0.01em;
+  border: 1px solid var(--border);
+}
+
+.form-deadline-banner::before {
+  content: '\1F4C5';
+  font-size: 0.9rem;
 }
 
 .form-deadline-banner.is-closed {
-  background: rgba(224, 82, 82, 0.12);
+  background: var(--danger-subtle);
   color: var(--danger);
+  border-color: rgba(238, 0, 0, 0.15);
+}
+
+.form-deadline-banner.is-closed::before {
+  content: '\1F512';
 }
 
 .preview-closed-state {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 48px 32px;
+  padding: 56px 32px;
   text-align: center;
 }
 
 .preview-closed-state .empty-icon {
-  font-size: 2.5rem;
-  margin-bottom: 12px;
+  font-size: 3rem;
+  margin-bottom: 16px;
+  opacity: 0.8;
 }
 
 .preview-closed-state h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
   margin-bottom: 8px;
+}
+
+.preview-closed-state p {
+  color: var(--text-secondary);
+  font-size: 0.92rem;
+  max-width: 420px;
+  margin: 0 auto;
+  line-height: 1.6;
 }
 
 .preview-closed-state p {
