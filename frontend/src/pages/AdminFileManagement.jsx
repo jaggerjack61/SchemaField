@@ -174,50 +174,50 @@ export default function AdminFileManagement() {
       </div>
 
       <div className="admin-file-grid">
-        <div className="form-card" style={{ overflowX: 'auto' }}>
-          <h3 style={{ marginBottom: '1rem' }}>Forms with Most Files</h3>
+        <div className="form-card admin-table-wrapper">
+          <h3 className="admin-table-title">Forms with Most Files</h3>
           <table className="admin-data-table">
             <thead>
-              <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                <th style={{ padding: '0.8rem' }}>Form</th>
-                <th style={{ padding: '0.8rem' }}>Files</th>
+              <tr>
+                <th>Form</th>
+                <th>Files</th>
               </tr>
             </thead>
             <tbody>
               {(summary?.forms_with_most_files || []).length === 0 && (
                 <tr>
-                  <td style={{ padding: '0.8rem' }} colSpan={2}>No form files found.</td>
+                  <td colSpan={2}>No form files found.</td>
                 </tr>
               )}
               {(summary?.forms_with_most_files || []).map((form) => (
-                <tr key={form.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                  <td style={{ padding: '0.8rem' }}>{form.title}</td>
-                  <td style={{ padding: '0.8rem' }}>{form.file_count}</td>
+                <tr key={form.id}>
+                  <td>{form.title}</td>
+                  <td>{form.file_count}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
 
-        <div className="form-card" style={{ overflowX: 'auto' }}>
-          <h3 style={{ marginBottom: '1rem' }}>File Types</h3>
+        <div className="form-card admin-table-wrapper">
+          <h3 className="admin-table-title">File Types</h3>
           <table className="admin-data-table">
             <thead>
-              <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                <th style={{ padding: '0.8rem' }}>Type</th>
-                <th style={{ padding: '0.8rem' }}>Count</th>
+              <tr>
+                <th>Type</th>
+                <th>Count</th>
               </tr>
             </thead>
             <tbody>
               {(summary?.file_types || []).length === 0 && (
                 <tr>
-                  <td style={{ padding: '0.8rem' }} colSpan={2}>No files found.</td>
+                  <td colSpan={2}>No files found.</td>
                 </tr>
               )}
               {(summary?.file_types || []).map((fileType) => (
-                <tr key={fileType.type} style={{ borderBottom: '1px solid var(--border)' }}>
-                  <td style={{ padding: '0.8rem' }}>{fileType.type}</td>
-                  <td style={{ padding: '0.8rem' }}>{fileType.count}</td>
+                <tr key={fileType.type}>
+                  <td>{fileType.type}</td>
+                  <td>{fileType.count}</td>
                 </tr>
               ))}
             </tbody>
@@ -225,7 +225,7 @@ export default function AdminFileManagement() {
         </div>
       </div>
 
-      <div className="form-card" style={{ marginTop: '1rem', overflowX: 'auto' }}>
+      <div className="form-card admin-table-wrapper" style={{ marginTop: '1rem' }}>
         <div className="admin-file-browser-header">
           <h3>Cleanup Orphaned Files (Uploads + QR Codes)</h3>
           <div className="admin-file-browser-controls">
@@ -262,25 +262,25 @@ export default function AdminFileManagement() {
         {showCleanupFiles && !cleanupLoading && (
           <table className="admin-data-table">
             <thead>
-              <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                <th style={{ padding: '0.8rem' }}>Path</th>
-                <th style={{ padding: '0.8rem' }}>Size</th>
-                <th style={{ padding: '0.8rem' }}>Updated</th>
-                <th style={{ padding: '0.8rem' }}>Open</th>
+              <tr>
+                <th>Path</th>
+                <th>Size</th>
+                <th>Updated</th>
+                <th>Open</th>
               </tr>
             </thead>
             <tbody>
               {cleanupInfo.files.length === 0 && (
                 <tr>
-                  <td style={{ padding: '0.8rem' }} colSpan={4}>No files to clean.</td>
+                  <td colSpan={4}>No files to clean.</td>
                 </tr>
               )}
               {cleanupInfo.files.map((file) => (
-                <tr key={file.path} style={{ borderBottom: '1px solid var(--border)' }}>
-                  <td style={{ padding: '0.8rem' }}>{file.path}</td>
-                  <td style={{ padding: '0.8rem' }}>{formatBytes(file.size_bytes)}</td>
-                  <td style={{ padding: '0.8rem' }}>{formatDate(file.modified_at)}</td>
-                  <td style={{ padding: '0.8rem' }}>
+                <tr key={file.path}>
+                  <td>{file.path}</td>
+                  <td>{formatBytes(file.size_bytes)}</td>
+                  <td>{formatDate(file.modified_at)}</td>
+                  <td>
                     <a href={file.url} target="_blank" rel="noreferrer" className="btn btn-secondary">Open</a>
                   </td>
                 </tr>
@@ -290,7 +290,7 @@ export default function AdminFileManagement() {
         )}
       </div>
 
-      <div className="form-card" style={{ marginTop: '1rem', overflowX: 'auto' }}>
+      <div className="form-card admin-table-wrapper" style={{ marginTop: '1rem' }}>
         <div className="admin-file-browser-header">
           <h3>File Browser</h3>
           <div className="admin-file-browser-controls">
@@ -315,36 +315,36 @@ export default function AdminFileManagement() {
 
         <table className="admin-data-table">
           <thead>
-            <tr style={{ borderBottom: '1px solid var(--border)' }}>
-              <th style={{ padding: '0.8rem' }}>Name</th>
-              <th style={{ padding: '0.8rem' }}>Type</th>
-              <th style={{ padding: '0.8rem' }}>Size</th>
-              <th style={{ padding: '0.8rem' }}>Form</th>
-              <th style={{ padding: '0.8rem' }}>Updated</th>
-              <th style={{ padding: '0.8rem' }}>Actions</th>
+            <tr>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Size</th>
+              <th>Form</th>
+              <th>Updated</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {browserLoading && (
               <tr>
-                <td style={{ padding: '0.8rem' }} colSpan={6}>Loading files...</td>
+                <td colSpan={6}>Loading files...</td>
               </tr>
             )}
 
             {!browserLoading && browser.directories.length === 0 && browser.files.length === 0 && (
               <tr>
-                <td style={{ padding: '0.8rem' }} colSpan={6}>No files in this folder.</td>
+                <td colSpan={6}>No files in this folder.</td>
               </tr>
             )}
 
             {!browserLoading && browser.directories.map((dir) => (
-              <tr key={`dir-${dir.path}`} style={{ borderBottom: '1px solid var(--border)' }}>
-                <td style={{ padding: '0.8rem' }}>{dir.name}</td>
-                <td style={{ padding: '0.8rem' }}>Folder</td>
-                <td style={{ padding: '0.8rem' }}>—</td>
-                <td style={{ padding: '0.8rem' }}>—</td>
-                <td style={{ padding: '0.8rem' }}>—</td>
-                <td style={{ padding: '0.8rem' }}>
+              <tr key={`dir-${dir.path}`}>
+                <td>{dir.name}</td>
+                <td>Folder</td>
+                <td>—</td>
+                <td>—</td>
+                <td>—</td>
+                <td>
                   <button className="btn btn-secondary" onClick={() => loadFileBrowser(dir.path)}>
                     Open
                   </button>
@@ -353,13 +353,13 @@ export default function AdminFileManagement() {
             ))}
 
             {!browserLoading && browser.files.map((file) => (
-              <tr key={`file-${file.path}`} style={{ borderBottom: '1px solid var(--border)' }}>
-                <td style={{ padding: '0.8rem' }}>{file.name}</td>
-                <td style={{ padding: '0.8rem' }}>{file.extension}</td>
-                <td style={{ padding: '0.8rem' }}>{formatBytes(file.size_bytes)}</td>
-                <td style={{ padding: '0.8rem' }}>{file.form_title || '—'}</td>
-                <td style={{ padding: '0.8rem' }}>{formatDate(file.modified_at)}</td>
-                <td style={{ padding: '0.8rem' }}>
+              <tr key={`file-${file.path}`}>
+                <td>{file.name}</td>
+                <td>{file.extension}</td>
+                <td>{formatBytes(file.size_bytes)}</td>
+                <td>{file.form_title || '—'}</td>
+                <td>{formatDate(file.modified_at)}</td>
+                <td>
                   <div className="admin-file-actions">
                     <a href={file.url} target="_blank" rel="noreferrer" className="btn btn-secondary">Open</a>
                     <button

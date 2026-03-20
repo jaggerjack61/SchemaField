@@ -36,7 +36,7 @@ export default function FormAnalytics() {
       const rData = responsesData.data
       setResponses(rData.results || rData)
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to load analytics data.')
+      setError('Failed to load analytics data.')
     } finally {
       setLoading(false)
     }

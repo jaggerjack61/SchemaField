@@ -83,3 +83,31 @@
 .toast.error {
   border-left: 3px solid var(--danger);
 }
+
+/* ============================================================
+   Error Boundary
+   ============================================================ */
+.error-boundary {
+  padding: 2rem;
+  color: var(--danger);
+  background: var(--bg-card);
+}
+
+.error-boundary h1 {
+  font-size: 1.3rem;
+  margin-bottom: 8px;
+}
+
+.error-boundary p {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.error-boundary-details {
+  text-align: left;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-top: 1rem;
+  max-width: 600px;
+  overflow: auto;
+}

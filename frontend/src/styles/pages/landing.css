@@ -4,7 +4,7 @@
 .landing-page.abstract-theme {
   position: relative;
   overflow: hidden;
-  background: #fff;
+  background: var(--bg-primary);
   color: #000;
   padding-bottom: 80px;
   min-height: 100vh;
@@ -39,7 +39,7 @@
 
 .badge-pill {
   border: 1px solid #eaeaea;
-  background: #fff;
+  background: var(--bg-card);
   padding: 6px 16px;
   border-radius: 99px;
   font-size: 0.8rem;
@@ -63,13 +63,7 @@
 }
 
 .text-gradient {
-  background: linear-gradient(180deg, #333 0%, #000 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  /* Subtly different or just keep solid black for pure minimalism */
-  color: #000;
-  -webkit-text-fill-color: initial;
-  opacity: 0.5;
+  color: var(--text-muted);
 }
 
 .hero-sub.abstract {
@@ -107,7 +101,7 @@
 }
 
 .manifesto-card {
-  background: #fff;
+  background: var(--bg-card);
   padding: 48px 40px;
   display: flex;
   flex-direction: column;
@@ -117,7 +111,7 @@
 }
 
 .manifesto-card:hover {
-  background: #fafafa;
+  background: var(--bg-card-hover);
 }
 
 .card-number {
@@ -151,7 +145,7 @@
   width: 100%;
   max-width: 900px;
   height: 500px;
-  background: #fff;
+  background: var(--bg-card);
   border: 1px solid #eaeaea;
   border-radius: 16px;
   box-shadow: 
@@ -191,7 +185,7 @@
   display: flex;
   flex-direction: column;
   gap: 24px;
-  background: linear-gradient(180deg, #fff 0%, #fafafa 100%);
+  background: linear-gradient(180deg, var(--bg-card) 0%, var(--bg-secondary) 100%);
   align-items: center;
 }
 
@@ -210,7 +204,7 @@
   border: 1px solid #eaeaea;
   border-radius: 8px;
   margin-top: 32px;
-  background: #fff;
+  background: var(--bg-input);
   box-shadow: 0 2px 5px rgba(0,0,0,0.02);
 }
 
@@ -227,7 +221,7 @@
 .landing-footer.abstract {
   border-top: 1px solid #eaeaea;
   padding: 60px 0;
-  background: #fff;
+  background: var(--bg-card);
 }
 
 .footer-content {

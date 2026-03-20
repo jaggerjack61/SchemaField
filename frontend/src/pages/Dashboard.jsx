@@ -214,11 +214,11 @@ export default function Dashboard() {
                 <span>🕐 {formatDate(form.updated_at)}</span>
               </div>
               
-              <div style={{ marginTop: '0.5rem' }}>
+              <div className="form-card-badge">
                  {form.is_owned ? (
-                   <span style={{ fontSize: '0.75rem', background: 'rgba(124, 92, 252, 0.2)', color: '#a78bfa', padding: '2px 6px', borderRadius: '4px' }}>Owned</span>
+                   <span className="badge-owned">Owned</span>
                  ) : (
-                   <span style={{ fontSize: '0.75rem', background: 'rgba(255, 255, 255, 0.1)', color: '#ccc', padding: '2px 6px', borderRadius: '4px' }}>
+                   <span className="badge-shared">
                      Shared by {form.owner_name}
                    </span>
                  )}
@@ -323,7 +323,7 @@ export default function Dashboard() {
               <button className="btn btn-secondary" onClick={() => setConfirmId(null)}>
                 Cancel
               </button>
-              <button className="btn btn-primary" style={{ background: 'var(--danger)', borderColor: 'var(--danger)' }} onClick={handleDelete}>
+              <button className="btn btn-danger" onClick={handleDelete}>
                 Delete
               </button>
             </div>

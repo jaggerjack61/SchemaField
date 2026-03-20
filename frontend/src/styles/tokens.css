@@ -5,21 +5,21 @@
 /* ---------- CSS Variables (Dark Theme) ---------- */
 /* ---------- CSS Variables (Vercel / SchemaField Theme) ---------- */
 :root {
-  --bg-primary: #ffffff;
-  --bg-secondary: #fafafa;
-  --bg-card: #ffffff;
-  --bg-card-hover: #f0f0f0;
-  --bg-input: #ffffff;
-  --bg-glass: rgba(255, 255, 255, 0.8);
+  --bg-primary: #f4f4f2;
+  --bg-secondary: #ebebe8;
+  --bg-card: #f8f8f6;
+  --bg-card-hover: #efefec;
+  --bg-input: #fdfdfb;
+  --bg-glass: rgba(248, 248, 246, 0.82);
   
   --text-primary: #000000;
   --text-secondary: #666666;
   --text-muted: #888888;
-  --text-inverse: #ffffff;
+  --text-inverse: #f8f8f6;
 
   --accent: #000000;
   --accent-hover: #333333;
-  --accent-subtle: #f4f4f4;
+  --accent-subtle: #ecece8;
   --accent-glow: rgba(0, 0, 0, 0.1);
 
   --primary: var(--accent);
@@ -32,7 +32,7 @@
   --success: #0070f3;
   --warning: #f5a623;
 
-  --border: #eaeaea;
+  --border: #dcdcd7;
   --border-focus: #000000;
 
   --radius-sm: 4px;

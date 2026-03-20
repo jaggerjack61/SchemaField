@@ -17,10 +17,10 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div style={{ padding: '2rem', color: 'red', background: 'white' }}>
+        <div className="error-boundary">
           <h1>Something went wrong.</h1>
           {process.env.NODE_ENV === 'development' && this.state.error && (
-            <pre style={{ textAlign: 'left', fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '1rem', maxWidth: '600px', overflow: 'auto' }}>
+            <pre className="error-boundary-details">
               {this.state.error.toString()}
             </pre>
           )}

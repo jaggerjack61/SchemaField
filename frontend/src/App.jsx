@@ -15,6 +15,7 @@ const LandingPage = lazy(() => import('./pages/LandingPage'))
 const AdminPanel = lazy(() => import('./pages/AdminPanel'))
 const AdminUserManagement = lazy(() => import('./pages/AdminUserManagement'))
 const AdminFileManagement = lazy(() => import('./pages/AdminFileManagement'))
+const Profile = lazy(() => import('./pages/Profile'))
 
 function App() {
   return (
@@ -33,6 +34,7 @@ function App() {
             {/* Protected Routes */}
             <Route element={<ProtectedRoute />}>
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/profile" element={<Profile />} />
               <Route path="/forms/new" element={<FormBuilder />} />
               <Route path="/forms/:id/edit" element={<FormBuilder />} />
               <Route path="/forms/:id/preview" element={<FormPreview />} />

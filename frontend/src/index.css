@@ -4,6 +4,7 @@
 @import "./styles/components/navbar.css";
 @import "./styles/pages/dashboard.css";
 @import "./styles/pages/admin.css";
+@import "./styles/pages/profile.css";
 @import "./styles/components/buttons.css";
 @import "./styles/pages/login.css";
 @import "./styles/pages/builder.css";

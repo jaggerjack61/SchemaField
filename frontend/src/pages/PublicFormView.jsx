@@ -2,22 +2,6 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { getForm, getFormByShareId, submitForm } from '../api'
 
-function formatDeadline(value) {
-  if (!value) return null
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return null
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(date)
-}
-
-function isFormClosed(deadline) {
-  if (!deadline) return false
-  const date = new Date(deadline)
-  return !Number.isNaN(date.getTime()) && date <= new Date()
-}
-
 function getMediaType(url) {
   if (!url) return null
   const ext = url.split('.').pop().split('?')[0].toLowerCase()
@@ -76,8 +60,6 @@ export default function PublicFormView() {
   const [errorMessage, setErrorMessage] = useState('')
   const [error, setError] = useState(null)
   const [inputErrors, setInputErrors] = useState({})
-  const closedAt = formatDeadline(form?.deadline)
-  const formIsClosed = isFormClosed(form?.deadline)
 
   useEffect(() => {
     let cancelled = false
@@ -160,12 +142,6 @@ export default function PublicFormView() {
     setSubmitting(true)
     
     try {
-      if (formIsClosed) {
-        setErrorMessage(closedAt ? `This form closed on ${closedAt}. New responses are no longer being accepted.` : 'This form is no longer accepting responses.')
-        setShowErrorModal(true)
-        return
-      }
-
       // Use FormData to handle potential file uploads
       const formData = new FormData()
       
@@ -205,7 +181,7 @@ export default function PublicFormView() {
       setSubmitted(true)
     } catch (err) {
       console.error(err)
-      setErrorMessage(err.response?.data?.detail || 'Failed to submit form. Please check your connection and try again.')
+      setErrorMessage('Failed to submit form. Please check your connection and try again.')
       setShowErrorModal(true)
     } finally {
       setSubmitting(false)
@@ -232,24 +208,7 @@ export default function PublicFormView() {
       <div className="preview-header">
         <h1>{form.title}</h1>
         {form.description && <p>{form.description}</p>}
-        {closedAt && (
-          <div className={`form-deadline-banner ${formIsClosed ? 'is-closed' : ''}`}>
-            {formIsClosed ? `Closed on ${closedAt}` : `Open until ${closedAt}`}
-          </div>
-        )}
       </div>
-
-      {formIsClosed ? (
-        <div className="preview-closed-state">
-          <div className="empty-icon">⏳</div>
-          <h2>This form is closed</h2>
-          <p>
-            {closedAt
-              ? `The submission deadline passed on ${closedAt}. New responses are no longer being accepted.`
-              : 'This form is no longer accepting responses.'}
-          </p>
-        </div>
-      ) : (
 
       <form onSubmit={handleSubmit}>
         {form.sections.map((section, si) => (
@@ -346,7 +305,6 @@ export default function PublicFormView() {
           </button>
         </div>
       </form>
-      )}
 
       {/* Error Modal */}
       {showErrorModal && (

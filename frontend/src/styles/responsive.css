@@ -49,4 +49,10 @@
   .manifesto-grid {
     grid-template-columns: 1fr;
   }
+  .admin-file-metrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .admin-file-grid {
+    grid-template-columns: 1fr;
+  }
 }

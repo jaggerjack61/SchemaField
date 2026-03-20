@@ -5,7 +5,6 @@ from io import BytesIO
 from django.core.files.base import ContentFile
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.conf import settings
-from django.utils import timezone
 
 
 class UserManager(BaseUserManager):
@@ -51,7 +50,6 @@ class Form(models.Model):
     title = models.CharField(max_length=255, default='Untitled Form')
     description = models.TextField(blank=True, default='')
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='forms', null=True, blank=True)
-    deadline = models.DateTimeField(null=True, blank=True)
     share_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, null=True)
     qr_code = models.ImageField(upload_to='qrcodes/', blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -62,10 +60,6 @@ class Form(models.Model):
 
     def __str__(self):
         return self.title
-
-    @property
-    def is_closed(self):
-        return bool(self.deadline and timezone.now() >= self.deadline)
 
     def save(self, *args, **kwargs):
         # Save first to ensure share_id is set

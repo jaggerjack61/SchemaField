@@ -83,39 +83,33 @@ export default function AdminUserManagement() {
         <Link to="/admin/files" className="btn btn-secondary">File Management</Link>
       </div>
 
-      <div className="form-card" style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+      <div className="form-card admin-table-wrapper">
+        <table className="admin-data-table">
           <thead>
-            <tr style={{ borderBottom: '1px solid var(--border)' }}>
-              <th style={{ padding: '1rem' }}>Name</th>
-              <th style={{ padding: '1rem' }}>Email</th>
-              <th style={{ padding: '1rem' }}>Role</th>
-              <th style={{ padding: '1rem' }}>Status</th>
-              <th style={{ padding: '1rem' }}>Joined</th>
-              <th style={{ padding: '1rem' }}>Actions</th>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Role</th>
+              <th>Status</th>
+              <th>Joined</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {users.map(user => (
-              <tr key={user.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                <td style={{ padding: '1rem' }}>{user.name}</td>
-                <td style={{ padding: '1rem' }}>{user.email}</td>
-                <td style={{ padding: '1rem' }}>
-                  <span style={{
-                    background: user.role === 'admin' ? 'var(--primary)' : 'var(--bg-secondary)',
-                    padding: '2px 8px',
-                    borderRadius: '4px',
-                    fontSize: '0.8rem'
-                  }}>
+              <tr key={user.id}>
+                <td>{user.name}</td>
+                <td>{user.email}</td>
+                <td>
+                  <span className={user.role === 'admin' ? 'badge-owned' : 'badge-shared'}>
                     {user.role}
                   </span>
                 </td>
-                <td style={{ padding: '1rem' }}>{user.is_active ? 'Active' : 'Inactive'}</td>
-                <td style={{ padding: '1rem' }}>{new Date(user.date_joined).toLocaleDateString()}</td>
-                <td style={{ padding: '1rem' }}>
+                <td>{user.is_active ? 'Active' : 'Inactive'}</td>
+                <td>{new Date(user.date_joined).toLocaleDateString()}</td>
+                <td>
                   <button
                     className="btn btn-secondary"
-                    style={{ fontSize: '0.8rem', padding: '0.3rem 0.6rem' }}
                     onClick={() => setResetId(user.id)}
                   >
                     Reset Pass
@@ -131,15 +125,14 @@ export default function AdminUserManagement() {
         <div className="share-modal-overlay" onClick={() => setShowModal(false)}>
           <div className="share-modal" onClick={e => e.stopPropagation()}>
             <h3>Create New User</h3>
-            <form onSubmit={handleCreateUser} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <form onSubmit={handleCreateUser} className="admin-modal-form">
               <input
                 type="text"
                 placeholder="Name"
                 value={newUser.name}
                 onChange={e => setNewUser({ ...newUser, name: e.target.value })}
                 required
-                className="form-title-input"
-                style={{ fontSize: '1rem' }}
+                className="admin-modal-input"
               />
               <input
                 type="email"
@@ -147,8 +140,7 @@ export default function AdminUserManagement() {
                 value={newUser.email}
                 onChange={e => setNewUser({ ...newUser, email: e.target.value })}
                 required
-                className="form-title-input"
-                style={{ fontSize: '1rem' }}
+                className="admin-modal-input"
               />
               <input
                 type="password"
@@ -156,14 +148,12 @@ export default function AdminUserManagement() {
                 value={newUser.password}
                 onChange={e => setNewUser({ ...newUser, password: e.target.value })}
                 required
-                className="form-title-input"
-                style={{ fontSize: '1rem' }}
+                className="admin-modal-input"
               />
               <select
                 value={newUser.role}
                 onChange={e => setNewUser({ ...newUser, role: e.target.value })}
-                className="form-title-input"
-                style={{ fontSize: '1rem' }}
+                className="admin-modal-input"
               >
                 <option value="user">User</option>
                 <option value="admin">Admin</option>
@@ -185,15 +175,14 @@ export default function AdminUserManagement() {
           <div className="share-modal" onClick={e => e.stopPropagation()}>
             <h3>Reset Password</h3>
             <p>Enter new password for user ID {resetId}</p>
-            <form onSubmit={handleResetPassword} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <form onSubmit={handleResetPassword} className="admin-modal-form">
               <input
                 type="password"
                 placeholder="New Password"
                 value={newPassword}
                 onChange={e => setNewPassword(e.target.value)}
                 required
-                className="form-title-input"
-                style={{ fontSize: '1rem' }}
+                className="admin-modal-input"
               />
               <div className="share-modal-actions">
                 <button type="button" className="btn btn-secondary" onClick={() => setResetId(null)}>Cancel</button>

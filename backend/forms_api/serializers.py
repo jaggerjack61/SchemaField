@@ -71,6 +71,17 @@ class ResetPasswordSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True)
 
 
+class UpdateProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['name']
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    current_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True, min_length=8)
+
+
 class FormPermissionSerializer(serializers.ModelSerializer):
     user_email = serializers.EmailField(source='user.email', read_only=True)
     user_name = serializers.CharField(source='user.name', read_only=True)
@@ -144,7 +155,7 @@ class FormDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Form
-        fields = ['id', 'title', 'description', 'deadline', 'created_at', 'updated_at', 'sections', 'share_id', 'qr_code']
+        fields = ['id', 'title', 'description', 'created_at', 'updated_at', 'sections', 'share_id', 'qr_code']
         read_only_fields = ['created_at', 'updated_at', 'share_id', 'qr_code']
 
     # ------------------------------------------------------------------ create
@@ -159,7 +170,6 @@ class FormDetailSerializer(serializers.ModelSerializer):
         sections_data = validated_data.pop('sections', [])
         instance.title = validated_data.get('title', instance.title)
         instance.description = validated_data.get('description', instance.description)
-        instance.deadline = validated_data.get('deadline', instance.deadline)
         instance.save()
 
         # Diff-based update: keep existing sections/questions, create new, delete removed

@@ -1,3 +1,4 @@
 .env
 .env.*
 *.sqlite3
+.playwright-mcp/

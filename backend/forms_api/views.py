@@ -9,7 +9,6 @@ from django.db.models import Q, Count
 from django.contrib.auth import get_user_model
 from django.conf import settings
 from django.http import StreamingHttpResponse
-from django.utils import timezone
 
 from pathlib import Path
 import csv
@@ -23,7 +22,8 @@ from .models import Form, FormPermission, Answer, Question
 from .serializers import (
     FormListSerializer, FormDetailSerializer, ResponseSerializer,
     UserSerializer, LoginSerializer, CreateUserSerializer, 
-    ResetPasswordSerializer, FormPermissionSerializer
+    ResetPasswordSerializer, FormPermissionSerializer,
+    UpdateProfileSerializer, ChangePasswordSerializer
 )
 from .permissions import IsAdmin, IsFormOwner, HasFormPermission
 
@@ -95,6 +95,25 @@ class MeView(APIView):
     def get(self, request):
         serializer = UserSerializer(request.user)
         return DRFResponse(serializer.data)
+
+    def patch(self, request):
+        serializer = UpdateProfileSerializer(request.user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return DRFResponse(UserSerializer(request.user).data)
+
+
+class ChangePasswordView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = ChangePasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        if not request.user.check_password(serializer.validated_data['current_password']):
+            return DRFResponse({'current_password': ['Incorrect password.']}, status=status.HTTP_400_BAD_REQUEST)
+        request.user.set_password(serializer.validated_data['new_password'])
+        request.user.save()
+        return DRFResponse({'status': 'password changed'})
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -411,17 +430,11 @@ class FormViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
 
-    def _is_admin_user(self, user):
-        return user.is_authenticated and user.role == 'admin'
-
     def check_object_permissions(self, request, obj):
         super().check_object_permissions(request, obj)
         
         # Public actions don't need further checks
         if self.action in ['submit', 'by_share_id']:
-            return
-
-        if self._is_admin_user(request.user):
             return
 
         # Owner can do anything
@@ -433,7 +446,7 @@ class FormViewSet(viewsets.ModelViewSet):
             if not FormPermission.objects.filter(form=obj, user=request.user, permission_type='edit').exists():
                 self.permission_denied(request, message="You do not have permission to edit this form.")
         
-        elif self.action in ['responses', 'export_csv']:
+        elif self.action == 'responses':
              if not FormPermission.objects.filter(form=obj, user=request.user, permission_type='view_responses').exists():
                 self.permission_denied(request, message="You do not have permission to view responses.")
         
@@ -459,14 +472,6 @@ class FormViewSet(viewsets.ModelViewSet):
     def submit(self, request, pk=None):
         # Public access allowed
         form = self.get_object()
-
-        if form.is_closed:
-            return DRFResponse(
-                {
-                    'detail': f'This form closed on {timezone.localtime(form.deadline).strftime("%b %d, %Y at %I:%M %p")}.',
-                },
-                status=status.HTTP_403_FORBIDDEN,
-            )
         
         # Construct data for serializer manually to avoid QueryDict issues with nested data
         data = {'form': form.id}

@@ -7,7 +7,7 @@
   justify-content: space-between;
   padding: 0 32px;
   height: 64px;
-  background: rgba(255, 255, 255, 0.8);
+  background: var(--bg-glass);
   backdrop-filter: saturate(180%) blur(5px);
   border-bottom: 1px solid var(--border);
   position: sticky;
@@ -66,10 +66,82 @@
 
 .navbar-links .btn-new {
   background: var(--accent);
-  color: #fff;
+  color: var(--text-inverse);
 }
 
 .navbar-links .btn-new:hover {
   background: var(--accent-hover);
-  box-shadow: var(--shadow-glow);
+}
+
+/* Dropdown */
+.navbar-dropdown {
+  position: relative;
+}
+
+.navbar-dropdown-trigger {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  font-weight: 500;
+  font-family: var(--font);
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  transition: all var(--transition);
+}
+
+.navbar-dropdown-trigger:hover {
+  background: var(--accent-subtle);
+  color: var(--text-primary);
+}
+
+.navbar-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 180px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0,0,0,.12);
+  padding: 4px;
+  z-index: 200;
+  animation: dropdown-in 0.15s ease;
+}
+
+@keyframes dropdown-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.navbar-dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  font-family: var(--font);
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+  text-decoration: none;
+  transition: all var(--transition);
+}
+
+.navbar-dropdown-item:hover {
+  background: var(--accent-subtle);
+  color: var(--text-primary);
+}
+
+.navbar-dropdown-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
 }

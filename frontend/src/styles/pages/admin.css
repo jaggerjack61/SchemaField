@@ -95,18 +95,74 @@ tr:last-child {
 /* Badges */
 .badge-owned {
   font-size: 0.75rem;
-  background: rgba(124, 92, 252, 0.2);
-  color: #a78bfa;
-  padding: 2px 6px;
-  border-radius: 4px;
+  background: var(--accent-subtle);
+  color: var(--text-secondary);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-weight: 500;
 }
 
 .badge-shared {
   font-size: 0.75rem;
-  background: rgba(255, 255, 255, 0.1);
-  color: #ccc;
-  padding: 2px 6px;
-  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+}
+
+/* Admin table wrapper */
+.admin-table-wrapper {
+  overflow-x: auto;
+}
+
+.admin-data-table th,
+.admin-data-table td {
+  padding: 0.85rem 1rem;
+}
+
+.admin-data-table thead tr {
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-data-table tbody tr {
+  border-bottom: 1px solid var(--border);
+  transition: background var(--transition);
+}
+
+.admin-data-table tbody tr:hover {
+  background: var(--bg-secondary);
+}
+
+/* Admin modal forms */
+.admin-modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+}
+
+.admin-modal-input {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 0.9rem;
+  font-family: var(--font);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color var(--transition);
+}
+
+.admin-modal-input:focus {
+  border-color: var(--border-focus);
+}
+
+.admin-table-title {
+  margin-bottom: 1rem;
+  font-size: 1rem;
+  font-weight: 600;
 }
 
 @media (max-width: 1024px) {

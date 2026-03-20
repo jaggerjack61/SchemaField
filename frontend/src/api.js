@@ -62,6 +62,8 @@ api.interceptors.response.use(
 
 export const login = (email, password) => api.post('/auth/login/', { email, password })
 export const getMe = () => api.get('/auth/me/')
+export const updateProfile = (data) => api.patch('/auth/me/', data)
+export const changePassword = (currentPassword, newPassword) => api.post('/auth/change-password/', { current_password: currentPassword, new_password: newPassword })
 
 // Forms
 export const getForms = () => api.get('/forms/')

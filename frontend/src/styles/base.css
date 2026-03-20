@@ -38,3 +38,10 @@ a {
   background: var(--text-muted);
   border-radius: 99px;
 }
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
