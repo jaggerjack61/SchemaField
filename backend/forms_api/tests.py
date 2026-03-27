@@ -71,3 +71,11 @@ class FormAccessTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertIn('This form closed on', response.data['detail'])
+
+
+class HealthRouteTests(TestCase):
+    def test_health_route_returns_ok_status(self):
+        response = self.client.get('/health')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {'status': 'ok'})
