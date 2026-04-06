@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { getUsers, createUser, resetUserPassword } from '../api'
+import { getUsers, createUser, updateUser, resetUserPassword } from '../api'
 
 export default function AdminUserManagement() {
   const [users, setUsers] = useState([])
@@ -14,6 +14,10 @@ export default function AdminUserManagement() {
   const [newPassword, setNewPassword] = useState('')
   const [resetting, setResetting] = useState(false)
 
+  const [editUser, setEditUser] = useState(null)
+  const [editForm, setEditForm] = useState({ name: '', email: '', role: 'user' })
+  const [saving, setSaving] = useState(false)
+
   const [toast, setToast] = useState(null)
 
   useEffect(() => {
@@ -23,7 +27,8 @@ export default function AdminUserManagement() {
   async function loadUsers() {
     try {
       const { data } = await getUsers()
-      setUsers(data)
+      // Handle paginated response (DRF default) or plain array
+      setUsers(data.results ?? data)
     } catch (err) {
       showToast('Failed to load users', 'error')
     } finally {
@@ -59,6 +64,26 @@ export default function AdminUserManagement() {
       showToast('Failed to reset password', 'error')
     } finally {
       setResetting(false)
+    }
+  }
+
+  function openEditModal(user) {
+    setEditUser(user)
+    setEditForm({ name: user.name, email: user.email, role: user.role })
+  }
+
+  async function handleEditUser(e) {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      const { data } = await updateUser(editUser.id, editForm)
+      setUsers(users.map(u => u.id === data.id ? data : u))
+      setEditUser(null)
+      showToast('User updated successfully', 'success')
+    } catch (err) {
+      showToast(err.response?.data?.email?.[0] || 'Failed to update user', 'error')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -113,6 +138,12 @@ export default function AdminUserManagement() {
                     onClick={() => setResetId(user.id)}
                   >
                     Reset Pass
+                  </button>
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => openEditModal(user)}
+                  >
+                    Edit
                   </button>
                 </td>
               </tr>
@@ -188,6 +219,46 @@ export default function AdminUserManagement() {
                 <button type="button" className="btn btn-secondary" onClick={() => setResetId(null)}>Cancel</button>
                 <button type="submit" className="btn btn-primary" disabled={resetting}>
                   {resetting ? 'Resetting...' : 'Reset'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {editUser && (
+        <div className="share-modal-overlay" onClick={() => setEditUser(null)}>
+          <div className="share-modal" onClick={e => e.stopPropagation()}>
+            <h3>Edit User</h3>
+            <form onSubmit={handleEditUser} className="admin-modal-form">
+              <input
+                type="text"
+                placeholder="Name"
+                value={editForm.name}
+                onChange={e => setEditForm({ ...editForm, name: e.target.value })}
+                required
+                className="admin-modal-input"
+              />
+              <input
+                type="email"
+                placeholder="Email"
+                value={editForm.email}
+                onChange={e => setEditForm({ ...editForm, email: e.target.value })}
+                required
+                className="admin-modal-input"
+              />
+              <select
+                value={editForm.role}
+                onChange={e => setEditForm({ ...editForm, role: e.target.value })}
+                className="admin-modal-input"
+              >
+                <option value="user">User</option>
+                <option value="admin">Admin</option>
+              </select>
+              <div className="share-modal-actions">
+                <button type="button" className="btn btn-secondary" onClick={() => setEditUser(null)}>Cancel</button>
+                <button type="submit" className="btn btn-primary" disabled={saving}>
+                  {saving ? 'Saving...' : 'Save'}
                 </button>
               </div>
             </form>

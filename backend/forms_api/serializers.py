@@ -143,10 +143,13 @@ class FormListSerializer(serializers.ModelSerializer):
             return []
         if obj.owner == request.user:
             return ['edit', 'view_responses'] # Owner has all
-        
-        # Return list of permission types
-        perms = FormPermission.objects.filter(form=obj, user=request.user).values_list('permission_type', flat=True)
-        return list(perms)
+
+        # Use prefetched permissions if available, avoiding N+1 query
+        if hasattr(obj, '_prefetched_objects_cache') and 'permissions' in obj._prefetched_objects_cache:
+            return [p.permission_type for p in obj.permissions.all() if p.user == request.user]
+
+        # Fallback to queryset lookup (shouldn't happen if queryset is properly prefetched)
+        return list(FormPermission.objects.filter(form=obj, user=request.user).values_list('permission_type', flat=True))
 
 
 class FormDetailSerializer(serializers.ModelSerializer):

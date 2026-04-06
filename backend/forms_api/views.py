@@ -1,7 +1,8 @@
-from rest_framework import viewsets, permissions, status
+from rest_framework import viewsets, permissions, status, pagination
+import rest_framework
 from rest_framework.decorators import action
 from rest_framework.response import Response as DRFResponse
-from rest_framework.throttling import AnonRateThrottle
+from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
@@ -85,6 +86,10 @@ class LoginRateThrottle(AnonRateThrottle):
     rate = '5/min'
 
 
+class FileManagerRateThrottle(UserRateThrottle):
+    rate = '30/min'
+
+
 class LoginView(TokenObtainPairView):
     serializer_class = LoginSerializer
     throttle_classes = [LoginRateThrottle]
@@ -121,7 +126,6 @@ class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
     permission_classes = [IsAdmin]
-    pagination_class = None
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -170,7 +174,7 @@ class UserViewSet(viewsets.ModelViewSet):
 
         return media_root, orphaned_files
 
-    @action(detail=False, methods=['get'], url_path='file-manager/summary')
+    @action(detail=False, methods=['get'], url_path='file-manager/summary', throttle_classes=[FileManagerRateThrottle])
     def file_manager_summary(self, request):
         media_root = Path(settings.MEDIA_ROOT).resolve()
         media_root.mkdir(parents=True, exist_ok=True)
@@ -215,7 +219,7 @@ class UserViewSet(viewsets.ModelViewSet):
             'file_types': sorted_extension_counts,
         })
 
-    @action(detail=False, methods=['get'], url_path='file-manager/browser')
+    @action(detail=False, methods=['get'], url_path='file-manager/browser', throttle_classes=[FileManagerRateThrottle])
     def file_manager_browser(self, request):
         media_root = Path(settings.MEDIA_ROOT).resolve()
         media_root.mkdir(parents=True, exist_ok=True)
@@ -229,11 +233,9 @@ class UserViewSet(viewsets.ModelViewSet):
         if not current_dir.exists() or not current_dir.is_dir():
             return DRFResponse({'detail': 'Directory not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-        answer_file_rows = Answer.objects.exclude(file_answer='').exclude(file_answer__isnull=True).values(
-            'file_answer',
-            'response__form__id',
-            'response__form__title'
-        )
+        answer_file_rows = Answer.objects.exclude(file_answer='').exclude(file_answer__isnull=True).select_related(
+            'response__form'
+        ).values('file_answer', 'response__form__id', 'response__form__title')
         answer_map = {
             row['file_answer']: {
                 'form_id': row['response__form__id'],
@@ -247,6 +249,8 @@ class UserViewSet(viewsets.ModelViewSet):
             media_file=''
         ).exclude(
             media_file__isnull=True
+        ).select_related(
+            'section__form'
         ).values(
             'media_file',
             'section__form__id',
@@ -266,7 +270,16 @@ class UserViewSet(viewsets.ModelViewSet):
         directories = []
         files = []
 
-        for entry in sorted(current_dir.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower())):
+        # Pagination params
+        page = int(request.query_params.get('page', 1))
+        page_size = min(int(request.query_params.get('page_size', 50)), 200)
+        offset = (page - 1) * page_size
+
+        all_entries = sorted(current_dir.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
+        total_entries = len(all_entries)
+        paginated_entries = all_entries[offset:offset + page_size]
+
+        for entry in paginated_entries:
             rel = entry.relative_to(media_root).as_posix()
             if entry.is_dir():
                 directories.append({
@@ -297,9 +310,12 @@ class UserViewSet(viewsets.ModelViewSet):
             'parent_path': parent_path,
             'directories': directories,
             'files': files,
+            'total_entries': total_entries,
+            'page': page,
+            'page_size': page_size,
         })
 
-    @action(detail=False, methods=['delete'], url_path='file-manager/file')
+    @action(detail=False, methods=['delete'], url_path='file-manager/file', throttle_classes=[FileManagerRateThrottle])
     def file_manager_delete_file(self, request):
         media_root = Path(settings.MEDIA_ROOT).resolve()
         media_root.mkdir(parents=True, exist_ok=True)
@@ -327,7 +343,7 @@ class UserViewSet(viewsets.ModelViewSet):
             'path': relative_path,
         })
 
-    @action(detail=False, methods=['get'], url_path='file-manager/cleanup-preview')
+    @action(detail=False, methods=['get'], url_path='file-manager/cleanup-preview', throttle_classes=[FileManagerRateThrottle])
     def file_manager_cleanup_preview(self, request):
         include_files = (request.query_params.get('view') or '').strip().lower() in ['1', 'true', 'yes']
         media_root, orphaned_files = self._collect_orphaned_managed_files()
@@ -351,7 +367,7 @@ class UserViewSet(viewsets.ModelViewSet):
 
         return DRFResponse(payload)
 
-    @action(detail=False, methods=['post'], url_path='file-manager/cleanup-orphaned-files')
+    @action(detail=False, methods=['post'], url_path='file-manager/cleanup-orphaned-files', throttle_classes=[FileManagerRateThrottle])
     def file_manager_cleanup_orphaned_files(self, request):
         media_root, orphaned_files = self._collect_orphaned_managed_files()
 
@@ -382,8 +398,10 @@ class FormViewSet(viewsets.ModelViewSet):
     """
     def get_queryset(self):
         # Allow public submission and retrieval (for form filling)
-        if self.action in ['submit', 'retrieve']:
-            return Form.objects.all()
+        if self.action in ['submit', 'retrieve', 'by_share_id']:
+            return Form.objects.all().prefetch_related(
+                'sections__questions__choices'
+            )
 
         user = self.request.user
         if not user.is_authenticated:
@@ -547,12 +565,22 @@ class FormViewSet(viewsets.ModelViewSet):
     def responses(self, request, pk=None):
         form = self.get_object()
         # Permission check handled in check_object_permissions
-        
+
+        page_size = request.query_params.get('page_size', 25)
+        try:
+            page_size = min(int(page_size), 100)  # cap at 100
+        except (ValueError, TypeError):
+            page_size = 25
+
         responses = form.responses.prefetch_related(
             'answers__question', 'answers__selected_choices'
-        ).all()
-        serializer = ResponseSerializer(responses, many=True)
-        return DRFResponse(serializer.data)
+        ).order_by('-created_at')
+
+        paginator = rest_framework.pagination.PageNumberPagination()
+        paginator.page_size = page_size
+        page = paginator.paginate_queryset(responses, request)
+        serializer = ResponseSerializer(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
 
     @action(detail=True, methods=['get'])
     def export_csv(self, request, pk=None):
@@ -575,11 +603,11 @@ class FormViewSet(viewsets.ModelViewSet):
             output.truncate(0)
 
             # Rows
-            responses = form.responses.prefetch_related(
+            responses = form.responses.select_related().prefetch_related(
                 'answers__question', 'answers__selected_choices'
             ).order_by('-created_at')
 
-            for r in responses.iterator():
+            for r in responses:
                 row = [r.id, r.created_at.strftime('%Y-%m-%d %H:%M:%S')]
                 answers_map = {a.question_id: a for a in r.answers.all()}
                 for q in questions:
@@ -607,7 +635,6 @@ class FormViewSet(viewsets.ModelViewSet):
 class FormPermissionViewSet(viewsets.ModelViewSet):
     serializer_class = FormPermissionSerializer
     permission_classes = [permissions.IsAuthenticated]
-    pagination_class = None
 
     def get_queryset(self):
         # Only permissions for forms owned by current user
