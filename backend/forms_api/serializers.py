@@ -93,6 +93,7 @@ class FormPermissionSerializer(serializers.ModelSerializer):
         model = FormPermission
         fields = ['id', 'form', 'user', 'user_email', 'user_name', 'permission_type', 'created_at', 'email']
         read_only_fields = ['user']
+        validators = []
 
     def create(self, validated_data):
         email = validated_data.pop('email')
@@ -100,10 +101,13 @@ class FormPermissionSerializer(serializers.ModelSerializer):
             user = User.objects.get(email=email)
         except User.DoesNotExist:
             raise serializers.ValidationError({'email': 'User with this email does not exist.'})
-        
-        # Check if permission already exists to avoid 500 IntegrityError
-        if FormPermission.objects.filter(form=validated_data['form'], user=user).exists():
-             raise serializers.ValidationError({'email': 'This user already has permission for this form.'})
+        permission_type = validated_data['permission_type']
+        if FormPermission.objects.filter(
+            form=validated_data['form'],
+            user=user,
+            permission_type=permission_type,
+        ).exists():
+            raise serializers.ValidationError({'permission_type': 'This user already has this permission for this form.'})
 
         return FormPermission.objects.create(user=user, **validated_data)
 
@@ -170,11 +174,14 @@ class FormDetailSerializer(serializers.ModelSerializer):
 
     # ------------------------------------------------------------------ update
     def update(self, instance, validated_data):
-        sections_data = validated_data.pop('sections', [])
+        sections_data = validated_data.pop('sections', None)
         instance.title = validated_data.get('title', instance.title)
         instance.description = validated_data.get('description', instance.description)
         instance.deadline = validated_data.get('deadline', instance.deadline)
         instance.save()
+
+        if sections_data is None:
+            return instance
 
         # Diff-based update: keep existing sections/questions, create new, delete removed
         incoming_section_ids = {s.get('id') for s in sections_data if s.get('id')}

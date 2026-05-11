@@ -81,6 +81,32 @@ class UploadQuestionMediaView(APIView):
 
 User = get_user_model()
 
+FILE_BROWSER_DEFAULT_PAGE = 1
+FILE_BROWSER_DEFAULT_PAGE_SIZE = 50
+FILE_BROWSER_MAX_PAGE_SIZE = 200
+
+
+def _resolve_media_child(media_root, relative_path):
+    target_path = (media_root / relative_path).resolve() if relative_path else media_root
+    try:
+        target_path.relative_to(media_root)
+    except ValueError:
+        return None
+    return target_path
+
+
+def _get_positive_int_query_param(query_params, name, default, maximum=None):
+    try:
+        value = int(query_params.get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+    if value < 1:
+        return default
+    if maximum is not None:
+        return min(value, maximum)
+    return value
+
 
 class LoginRateThrottle(AnonRateThrottle):
     rate = '5/min'
@@ -227,8 +253,8 @@ class UserViewSet(viewsets.ModelViewSet):
         requested_path = (request.query_params.get('path') or '').strip().replace('\\', '/')
         relative_path = requested_path.strip('/')
 
-        current_dir = (media_root / relative_path).resolve() if relative_path else media_root
-        if not str(current_dir).startswith(str(media_root)):
+        current_dir = _resolve_media_child(media_root, relative_path)
+        if current_dir is None:
             return DRFResponse({'detail': 'Invalid path.'}, status=status.HTTP_400_BAD_REQUEST)
         if not current_dir.exists() or not current_dir.is_dir():
             return DRFResponse({'detail': 'Directory not found.'}, status=status.HTTP_404_NOT_FOUND)
@@ -271,8 +297,17 @@ class UserViewSet(viewsets.ModelViewSet):
         files = []
 
         # Pagination params
-        page = int(request.query_params.get('page', 1))
-        page_size = min(int(request.query_params.get('page_size', 50)), 200)
+        page = _get_positive_int_query_param(
+            request.query_params,
+            'page',
+            FILE_BROWSER_DEFAULT_PAGE,
+        )
+        page_size = _get_positive_int_query_param(
+            request.query_params,
+            'page_size',
+            FILE_BROWSER_DEFAULT_PAGE_SIZE,
+            FILE_BROWSER_MAX_PAGE_SIZE,
+        )
         offset = (page - 1) * page_size
 
         all_entries = sorted(current_dir.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
@@ -325,8 +360,8 @@ class UserViewSet(viewsets.ModelViewSet):
         if not relative_path:
             return DRFResponse({'detail': 'File path is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        file_path = (media_root / relative_path).resolve()
-        if not str(file_path).startswith(str(media_root)):
+        file_path = _resolve_media_child(media_root, relative_path)
+        if file_path is None:
             return DRFResponse({'detail': 'Invalid file path.'}, status=status.HTTP_400_BAD_REQUEST)
         if not file_path.exists() or not file_path.is_file():
             return DRFResponse({'detail': 'File not found.'}, status=status.HTTP_404_NOT_FOUND)
@@ -489,7 +524,7 @@ class FormViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], url_path='by-share-id/(?P<share_id>[^/.]+)')
     def by_share_id(self, request, share_id=None):
         # Public access allowed
-        form = get_object_or_404(Form, share_id=share_id)
+        form = get_object_or_404(self.get_queryset(), share_id=share_id)
         serializer = FormDetailSerializer(form, context={'request': request})
         return DRFResponse(serializer.data)
 

@@ -40,7 +40,7 @@ if not "%~1"=="" (
         echo Only one argument is expected
         exit /b 1
     )
-    git add .
+    git add -A
     git commit -m "%~1"
     git push
     exit /b
