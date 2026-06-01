@@ -3,6 +3,7 @@
    ============================================================ */
 .profile-page {
   max-width: 600px;
+  margin: 0 auto;
 }
 
 /* --- Header with avatar --- */
