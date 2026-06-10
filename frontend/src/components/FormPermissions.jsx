@@ -17,8 +17,10 @@ export default function FormPermissions({ formId, onClose }) {
   async function loadData() {
     try {
       const { data } = await getFormPermissions()
+      // API returns paginated response: { results: [...] } or plain array
+      const allPermissions = data.results || data
       // Filter permissions for THIS form
-      setPermissions(data.filter(p => p.form === formId))
+      setPermissions(allPermissions.filter(p => p.form === formId))
     } catch (err) {
       console.error('Failed to load permissions')
     } finally {
