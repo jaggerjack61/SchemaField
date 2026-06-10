@@ -116,6 +116,7 @@ class FormListSerializer(serializers.ModelSerializer):
     """Lightweight serializer for the dashboard list view."""
     question_count = serializers.SerializerMethodField()
     section_count = serializers.SerializerMethodField()
+    response_count = serializers.SerializerMethodField()
     owner_name = serializers.CharField(source='owner.name', read_only=True)
     is_owned = serializers.SerializerMethodField()
     user_permissions = serializers.SerializerMethodField()
@@ -123,7 +124,7 @@ class FormListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Form
         fields = ['id', 'title', 'description', 'created_at', 'updated_at',
-                  'section_count', 'question_count', 'share_id', 'qr_code', 'owner_name', 'is_owned', 'user_permissions']
+                  'section_count', 'question_count', 'response_count', 'share_id', 'qr_code', 'owner_name', 'is_owned', 'user_permissions']
 
     def get_section_count(self, obj):
         if hasattr(obj, '_section_count'):
@@ -134,6 +135,11 @@ class FormListSerializer(serializers.ModelSerializer):
         if hasattr(obj, '_question_count'):
             return obj._question_count
         return sum(s.questions.count() for s in obj.sections.all())
+
+    def get_response_count(self, obj):
+        if hasattr(obj, '_response_count'):
+            return obj._response_count
+        return obj.responses.count()
 
     def get_is_owned(self, obj):
         request = self.context.get('request')

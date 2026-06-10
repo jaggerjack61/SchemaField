@@ -453,7 +453,8 @@ class FormViewSet(viewsets.ModelViewSet):
         if self.action == 'list':
             qs = qs.select_related('owner').annotate(
                 _section_count=Count('sections', distinct=True),
-                _question_count=Count('sections__questions', distinct=True)
+                _question_count=Count('sections__questions', distinct=True),
+                _response_count=Count('responses', distinct=True)
             ).prefetch_related('permissions')
 
         return qs

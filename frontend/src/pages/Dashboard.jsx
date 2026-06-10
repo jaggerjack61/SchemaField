@@ -211,6 +211,7 @@ export default function Dashboard() {
                 <div className="form-card-meta">
                 <span>📋 {form.section_count} section{form.section_count !== 1 ? 's' : ''}</span>
                 <span>❓ {form.question_count} question{form.question_count !== 1 ? 's' : ''}</span>
+                <span>✅ {form.response_count} response{form.response_count !== 1 ? 's' : ''}</span>
                 <span>🕐 {formatDate(form.updated_at)}</span>
               </div>
               
