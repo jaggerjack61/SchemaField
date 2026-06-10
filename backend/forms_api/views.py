@@ -20,7 +20,7 @@ import shutil
 import uuid as _uuid
 from datetime import datetime, timezone as dt_timezone
 
-from .models import Form, FormPermission, Answer, Question
+from .models import Form, FormPermission, Answer, Question, FormArchive
 from .serializers import (
     FormListSerializer, FormDetailSerializer, ResponseSerializer,
     UserSerializer, LoginSerializer, CreateUserSerializer, 
@@ -451,11 +451,24 @@ class FormViewSet(viewsets.ModelViewSet):
             qs = (owned_forms | shared_forms).distinct().order_by('-updated_at')
 
         if self.action == 'list':
+            from django.db.models import Exists, OuterRef, Q
+            archive_subquery = FormArchive.objects.filter(
+                user=user, form=OuterRef('pk')
+            )
             qs = qs.select_related('owner').annotate(
                 _section_count=Count('sections', distinct=True),
                 _question_count=Count('sections__questions', distinct=True),
-                _response_count=Count('responses', distinct=True)
+                _response_count=Count('responses', distinct=True),
+                _is_archived=Exists(archive_subquery),
             ).prefetch_related('permissions')
+
+            # Filter by archived status if query param is provided
+            archived_param = self.request.query_params.get('archived')
+            if archived_param is not None:
+                if archived_param.lower() == 'true':
+                    qs = qs.filter(_is_archived=True)
+                else:
+                    qs = qs.filter(_is_archived=False)
 
         return qs
 
@@ -528,6 +541,20 @@ class FormViewSet(viewsets.ModelViewSet):
         form = get_object_or_404(self.get_queryset(), share_id=share_id)
         serializer = FormDetailSerializer(form, context={'request': request})
         return DRFResponse(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def archive(self, request, pk=None):
+        """Archive a form for the current user. Idempotent."""
+        form = self.get_object()
+        FormArchive.objects.get_or_create(user=request.user, form=form)
+        return DRFResponse({'detail': 'Form archived.'}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'])
+    def restore(self, request, pk=None):
+        """Restore (un-archive) a form for the current user. Idempotent."""
+        form = self.get_object()
+        FormArchive.objects.filter(user=request.user, form=form).delete()
+        return DRFResponse({'detail': 'Form restored.'}, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'])
     def submit(self, request, pk=None):

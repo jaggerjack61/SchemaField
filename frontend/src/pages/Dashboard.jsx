@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { getForms, deleteForm } from '../api'
+import { getForms, deleteForm, archiveForm, restoreForm } from '../api'
 
 import FormPermissions from '../components/FormPermissions'
 
@@ -11,6 +11,7 @@ export default function Dashboard() {
   const [searchInput, setSearchInput] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
   const [viewMode, setViewMode] = useState('card')
+  const [activeTab, setActiveTab] = useState('active')
   const [visibleCount, setVisibleCount] = useState(FORMS_PAGE_SIZE)
   const [loading, setLoading] = useState(true)
   const [confirmId, setConfirmId] = useState(null)
@@ -18,7 +19,18 @@ export default function Dashboard() {
   const [managePermissionsId, setManagePermissionsId] = useState(null)
   const [toast, setToast] = useState(null)
   const [copied, setCopied] = useState(false)
+  const [openMenuId, setOpenMenuId] = useState(null)
   const lazyLoaderRef = useRef(null)
+
+  // Close overflow menu when clicking outside
+  useEffect(() => {
+    if (!openMenuId) return
+    function handleClick() {
+      setOpenMenuId(null)
+    }
+    document.addEventListener('click', handleClick)
+    return () => document.removeEventListener('click', handleClick)
+  }, [openMenuId])
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -54,6 +66,26 @@ export default function Dashboard() {
     }
   }
 
+  async function handleArchive(id) {
+    try {
+      await archiveForm(id)
+      setForms(forms.map((f) => f.id === id ? { ...f, is_archived: true } : f))
+      showToast('Form archived', 'success')
+    } catch (err) {
+      showToast('Failed to archive form', 'error')
+    }
+  }
+
+  async function handleRestore(id) {
+    try {
+      await restoreForm(id)
+      setForms(forms.map((f) => f.id === id ? { ...f, is_archived: false } : f))
+      showToast('Form restored', 'success')
+    } catch (err) {
+      showToast('Failed to restore form', 'error')
+    }
+  }
+
   function showToast(message, type) {
     setToast({ message, type })
     setTimeout(() => setToast(null), 3000)
@@ -84,6 +116,8 @@ export default function Dashboard() {
 
   const normalizedSearchTerm = searchTerm.trim().toLowerCase()
   const filteredForms = forms.filter((form) => {
+    if (activeTab === 'active' && form.is_archived) return false
+    if (activeTab === 'archived' && !form.is_archived) return false
     if (!normalizedSearchTerm) {
       return true
     }
@@ -97,7 +131,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     setVisibleCount(FORMS_PAGE_SIZE)
-  }, [searchTerm])
+  }, [searchTerm, activeTab])
 
   useEffect(() => {
     if (!hasMoreForms || !lazyLoaderRef.current) {
@@ -136,6 +170,23 @@ export default function Dashboard() {
         <Link to="/forms/new" className="btn btn-primary">
           + Create Form
         </Link>
+      </div>
+
+      <div className="dashboard-tabs">
+        <button
+          type="button"
+          className={`tab-btn ${activeTab === 'active' ? 'active' : ''}`}
+          onClick={() => setActiveTab('active')}
+        >
+          📋 Active
+        </button>
+        <button
+          type="button"
+          className={`tab-btn ${activeTab === 'archived' ? 'active' : ''}`}
+          onClick={() => setActiveTab('archived')}
+        >
+          📦 Archived
+        </button>
       </div>
 
       <div className="dashboard-controls">
@@ -180,7 +231,7 @@ export default function Dashboard() {
 
       {filteredForms.length === 0 ? (
         <div className="empty-state">
-          <div className="empty-icon">📝</div>
+          <div className="empty-icon">{activeTab === 'archived' ? '📦' : '📝'}</div>
           {forms.length === 0 ? (
             <>
               <h2>No forms yet</h2>
@@ -188,6 +239,11 @@ export default function Dashboard() {
               <Link to="/forms/new" className="btn btn-primary">
                 + Create Form
               </Link>
+            </>
+          ) : activeTab === 'archived' ? (
+            <>
+              <h2>No archived forms</h2>
+              <p>Forms you archive will appear here.</p>
             </>
           ) : (
             <>
@@ -249,26 +305,64 @@ export default function Dashboard() {
                 >
                   🔗 Share
                 </button>
-                
-                {form.is_owned && (
-                  <button
-                    className="btn btn-secondary"
-                    onClick={() => setManagePermissionsId(form.id)}
-                    title="Manage Permissions"
-                  >
-                    👥 Users
-                  </button>
-                )}
 
-                {form.is_owned && (
+                <div className="form-card-actions-more">
                   <button
-                    className="btn btn-danger"
-                    onClick={() => setConfirmId(form.id)}
-                    title="Delete Form"
+                    className="btn-more-toggle"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setOpenMenuId(openMenuId === form.id ? null : form.id)
+                    }}
+                    title="More actions"
+                    aria-label="More actions"
+                    aria-expanded={openMenuId === form.id}
                   >
-                    🗑 Delete
+                    <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+                      <circle cx="12" cy="5" r="1.5" />
+                      <circle cx="12" cy="12" r="1.5" />
+                      <circle cx="12" cy="19" r="1.5" />
+                    </svg>
                   </button>
-                )}
+
+                  {openMenuId === form.id && (
+                    <div className="dropdown-menu" onClick={(e) => e.stopPropagation()}>
+                      {form.is_owned && (
+                        <button
+                          className="dropdown-item"
+                          onClick={() => setManagePermissionsId(form.id)}
+                        >
+                          👥 Users
+                        </button>
+                      )}
+                      {form.is_archived ? (
+                        <button
+                          className="dropdown-item"
+                          onClick={() => handleRestore(form.id)}
+                        >
+                          ♻️ Restore
+                        </button>
+                      ) : (
+                        <button
+                          className="dropdown-item"
+                          onClick={() => handleArchive(form.id)}
+                        >
+                          📦 Archive
+                        </button>
+                      )}
+                      {form.is_owned && (
+                        <div className="dropdown-divider" />
+                      )}
+                      {form.is_owned && (
+                        <button
+                          className="dropdown-item dropdown-item-danger"
+                          onClick={() => setConfirmId(form.id)}
+                        >
+                          🗑 Delete
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           ))}

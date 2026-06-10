@@ -7,7 +7,7 @@ from datetime import timedelta
 from pathlib import Path
 import tempfile
 
-from .models import Choice, Form, FormPermission, Question, Section, User
+from .models import Choice, Form, FormArchive, FormPermission, Question, Section, User
 
 
 class FormAccessTests(TestCase):
@@ -229,3 +229,95 @@ class HealthRouteTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {'status': 'ok'})
+
+
+class FormArchiveTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.owner = User.objects.create_user(
+            email='archive-owner@example.com',
+            password='password123',
+            name='Archive Owner',
+            role='user',
+        )
+        self.other_user = User.objects.create_user(
+            email='archive-other@example.com',
+            password='password123',
+            name='Archive Other',
+            role='user',
+        )
+        self.form = Form.objects.create(title='Archive Test Form', owner=self.owner)
+
+    def test_archive_creates_record(self):
+        self.client.force_authenticate(user=self.owner)
+        response = self.client.post(reverse('form-archive', args=[self.form.id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(FormArchive.objects.filter(user=self.owner, form=self.form).exists())
+
+    def test_archive_is_idempotent(self):
+        self.client.force_authenticate(user=self.owner)
+        self.client.post(reverse('form-archive', args=[self.form.id]))
+        response = self.client.post(reverse('form-archive', args=[self.form.id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(FormArchive.objects.filter(user=self.owner, form=self.form).count(), 1)
+
+    def test_restore_removes_record(self):
+        FormArchive.objects.create(user=self.owner, form=self.form)
+        self.client.force_authenticate(user=self.owner)
+        response = self.client.post(reverse('form-restore', args=[self.form.id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(FormArchive.objects.filter(user=self.owner, form=self.form).exists())
+
+    def test_restore_is_idempotent(self):
+        self.client.force_authenticate(user=self.owner)
+        response = self.client.post(reverse('form-restore', args=[self.form.id]))
+        self.assertEqual(response.status_code, 200)
+
+    def test_archiving_is_per_user(self):
+        """Archiving as one user does not archive for another user."""
+        self.client.force_authenticate(user=self.owner)
+        self.client.post(reverse('form-archive', args=[self.form.id]))
+        self.assertFalse(FormArchive.objects.filter(user=self.other_user, form=self.form).exists())
+
+    def test_list_excludes_archived_forms_by_default(self):
+        FormArchive.objects.create(user=self.owner, form=self.form)
+        self.client.force_authenticate(user=self.owner)
+        response = self.client.get(reverse('form-list'))
+        # Default list includes all forms with is_archived flag
+        results = response.data.get('results', response.data)
+        form_data = next(f for f in results if f['id'] == self.form.id)
+        self.assertTrue(form_data['is_archived'])
+
+    def test_list_filters_only_archived_when_param_set(self):
+        FormArchive.objects.create(user=self.owner, form=self.form)
+        self.client.force_authenticate(user=self.owner)
+        response = self.client.get(reverse('form-list'), {'archived': 'true'})
+        results = response.data.get('results', response.data)
+        ids = [f['id'] for f in results]
+        self.assertIn(self.form.id, ids)
+
+    def test_list_filters_only_active_when_param_set(self):
+        FormArchive.objects.create(user=self.owner, form=self.form)
+        self.client.force_authenticate(user=self.owner)
+        response = self.client.get(reverse('form-list'), {'archived': 'false'})
+        results = response.data.get('results', response.data)
+        ids = [f['id'] for f in results]
+        self.assertNotIn(self.form.id, ids)
+
+    def test_is_archived_false_for_non_archived_form(self):
+        self.client.force_authenticate(user=self.owner)
+        response = self.client.get(reverse('form-list'))
+        results = response.data.get('results', response.data)
+        form_data = next(f for f in results if f['id'] == self.form.id)
+        self.assertFalse(form_data['is_archived'])
+
+    def test_shared_user_can_archive_independently(self):
+        FormPermission.objects.create(
+            form=self.form, user=self.other_user, permission_type='edit'
+        )
+        self.client.force_authenticate(user=self.other_user)
+        response = self.client.post(reverse('form-archive', args=[self.form.id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(FormArchive.objects.filter(user=self.other_user, form=self.form).exists())
+        # Owner's form should not be archived
+        self.assertFalse(FormArchive.objects.filter(user=self.owner, form=self.form).exists())

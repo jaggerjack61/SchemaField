@@ -51,6 +51,30 @@
   color: var(--danger-hover);
 }
 
+.btn-archive {
+  background: transparent;
+  color: var(--text-secondary);
+  border-color: var(--border);
+}
+
+.btn-archive:hover {
+  background: var(--accent-subtle);
+  border-color: var(--text-secondary);
+  color: var(--text-primary);
+}
+
+.btn-restore {
+  background: transparent;
+  color: var(--success);
+  border-color: var(--border);
+}
+
+.btn-restore:hover {
+  background: rgba(0, 112, 243, 0.08);
+  border-color: var(--success);
+  color: var(--success);
+}
+
 .btn-icon {
   width: 36px;
   height: 36px;

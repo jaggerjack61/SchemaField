@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Form, Section, Question, Choice, Response, Answer, FormPermission
+from .models import Form, Section, Question, Choice, Response, Answer, FormPermission, FormArchive
 
 
 class ChoiceSerializer(serializers.ModelSerializer):
@@ -120,11 +120,13 @@ class FormListSerializer(serializers.ModelSerializer):
     owner_name = serializers.CharField(source='owner.name', read_only=True)
     is_owned = serializers.SerializerMethodField()
     user_permissions = serializers.SerializerMethodField()
+    is_archived = serializers.SerializerMethodField()
 
     class Meta:
         model = Form
         fields = ['id', 'title', 'description', 'created_at', 'updated_at',
-                  'section_count', 'question_count', 'response_count', 'share_id', 'qr_code', 'owner_name', 'is_owned', 'user_permissions']
+                  'section_count', 'question_count', 'response_count', 'share_id', 'qr_code',
+                  'owner_name', 'is_owned', 'user_permissions', 'is_archived']
 
     def get_section_count(self, obj):
         if hasattr(obj, '_section_count'):
@@ -160,6 +162,15 @@ class FormListSerializer(serializers.ModelSerializer):
 
         # Fallback to queryset lookup (shouldn't happen if queryset is properly prefetched)
         return list(FormPermission.objects.filter(form=obj, user=request.user).values_list('permission_type', flat=True))
+
+    def get_is_archived(self, obj):
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return False
+        # Use annotated value if available to avoid N+1 queries
+        if hasattr(obj, '_is_archived'):
+            return obj._is_archived
+        return FormArchive.objects.filter(user=request.user, form=obj).exists()
 
 
 class FormDetailSerializer(serializers.ModelSerializer):

@@ -30,6 +30,37 @@
   margin-bottom: 20px;
 }
 
+.dashboard-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0;
+}
+
+.tab-btn {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: var(--font);
+  font-size: 0.9rem;
+  font-weight: 500;
+  padding: 10px 20px;
+  transition: all var(--transition);
+}
+
+.tab-btn:hover {
+  color: var(--text-primary);
+}
+
+.tab-btn.active {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
 .dashboard-search {
   width: 100%;
   max-width: 380px;
@@ -148,6 +179,7 @@
   border-color: var(--text-secondary);
   box-shadow: var(--shadow-md);
   transform: translateY(-2px);
+  z-index: 50;
 }
 
 .form-card-title {
@@ -179,11 +211,104 @@
 
 .form-card-actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   margin-top: auto;
   padding-top: 12px;
   border-top: 1px solid var(--border);
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  align-items: center;
+}
+
+.form-card-actions .btn {
+  padding: 0 8px;
+  gap: 4px;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+/* ---------- 3-dot More Actions ---------- */
+.form-card-actions-more {
+  margin-left: auto;
+  position: relative;
+  z-index: 10;
+}
+
+.btn-more-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition);
+  line-height: 1;
+}
+
+.btn-more-toggle:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+
+.btn-more-toggle[aria-expanded="true"] {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+
+.dropdown-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  min-width: 170px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 100;
+  padding: 4px;
+  animation: fadeIn 0.12s ease;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-family: var(--font);
+  font-size: 0.85rem;
+  text-align: left;
+  transition: background var(--transition);
+  white-space: nowrap;
+}
+
+.dropdown-item:hover {
+  background: var(--bg-secondary);
+}
+
+.dropdown-item-danger {
+  color: var(--danger);
+}
+
+.dropdown-item-danger:hover {
+  background: var(--danger-subtle);
+}
+
+.dropdown-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 8px;
 }
 
 /* ---------- Share Modal ---------- */

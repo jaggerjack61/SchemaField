@@ -72,6 +72,8 @@ export const getFormByShareId = (shareId) => api.get('/forms/by-share-id/' + sha
 export const createForm = (data) => api.post('/forms/', data)
 export const updateForm = (id, data) => api.put('/forms/' + id + '/', data)
 export const deleteForm = (id) => api.delete('/forms/' + id + '/')
+export const archiveForm = (id) => api.post('/forms/' + id + '/archive/')
+export const restoreForm = (id) => api.post('/forms/' + id + '/restore/')
 export const submitForm = (id, data) => api.post('/forms/' + id + '/submit/', data)
 export const getFormResponses = (id) => api.get('/forms/' + id + '/responses/')
 export const exportFormResponses = (id) => api.get('/forms/' + id + '/export_csv/', { responseType: 'blob' })  // Expect binary data

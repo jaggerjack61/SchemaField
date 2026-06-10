@@ -185,3 +185,17 @@ class FormPermission(models.Model):
 
     def __str__(self):
         return f'{self.user.email} - {self.form.title} - {self.permission_type}'
+
+
+class FormArchive(models.Model):
+    """Per-user archive record. Archiving is individual — one user archiving
+    does not affect other users who share the same form."""
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='form_archives')
+    form = models.ForeignKey(Form, on_delete=models.CASCADE, related_name='archives')
+    archived_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user', 'form')
+
+    def __str__(self):
+        return f'{self.user.email} archived {self.form.title}'
