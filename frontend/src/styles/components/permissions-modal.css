@@ -1,0 +1,165 @@
+/* ============================================================
+   Permissions Modal
+   ============================================================ */
+.permissions-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  animation: fadeIn 0.2s ease;
+}
+
+.permissions-modal {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 28px;
+  width: 480px;
+  max-width: 92vw;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-lg);
+  animation: slideUp 0.25s ease;
+}
+
+.permissions-modal h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 20px;
+  color: var(--text-primary);
+}
+
+/* Permission form */
+.permissions-form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.permissions-form input {
+  flex: 1;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font);
+  font-size: 0.85rem;
+  padding: 10px 14px;
+  outline: none;
+  transition: border-color var(--transition);
+}
+
+.permissions-form input:focus {
+  border-color: var(--accent);
+}
+
+.permissions-form select {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font);
+  font-size: 0.85rem;
+  padding: 10px 14px;
+  outline: none;
+  cursor: pointer;
+  transition: border-color var(--transition);
+}
+
+.permissions-form select:focus {
+  border-color: var(--accent);
+}
+
+.permissions-form .btn {
+  white-space: nowrap;
+  padding: 10px 16px;
+  font-size: 0.85rem;
+}
+
+/* Permissions error */
+.permissions-error {
+  color: var(--danger);
+  font-size: 0.85rem;
+  margin-bottom: 12px;
+}
+
+/* Permissions list */
+.permissions-list {
+  flex: 1;
+  overflow-y: auto;
+  margin-bottom: 20px;
+  min-height: 100px;
+}
+
+.permissions-empty {
+  color: var(--text-secondary);
+  text-align: center;
+  padding: 24px 0;
+  font-size: 0.9rem;
+}
+
+/* Permissions table */
+.permissions-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.permissions-table tr {
+  border-bottom: 1px solid var(--border);
+}
+
+.permissions-table tr:last-child {
+  border-bottom: none;
+}
+
+.permissions-table td {
+  padding: 12px 8px;
+  vertical-align: middle;
+}
+
+.permissions-user-name {
+  font-weight: 500;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+.permissions-user-email {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.permissions-badge {
+  display: inline-block;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.permissions-remove-btn {
+  color: var(--danger);
+  border-color: var(--danger);
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  transition: all var(--transition);
+}
+
+.permissions-remove-btn:hover {
+  background: var(--danger-subtle);
+}
+
+/* Modal actions */
+.permissions-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}

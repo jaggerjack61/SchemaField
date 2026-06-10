@@ -139,3 +139,17 @@
   font-size: 0.7rem;
   font-weight: 800;
 }
+
+.back-to-home-link {
+  display: block;
+  text-align: center;
+  margin-top: 20px;
+  font-size: 0.9rem;
+  color: #666;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.back-to-home-link:hover {
+  color: #000;
+}

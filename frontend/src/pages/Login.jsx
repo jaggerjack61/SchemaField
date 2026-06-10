@@ -102,7 +102,10 @@ export default function Login() {
               {cooldown > 0 ? `Too many attempts. Retry in ${cooldown}s` : loading ? 'Authenticating...' : 'Sign In'}
             </button>
           </form>
-          
+
+          <Link to="/" className="back-to-home-link">
+            ← Back to Home
+          </Link>
 
         </div>
       </div>
