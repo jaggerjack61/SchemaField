@@ -6,51 +6,33 @@ A modern, schematic data capture platform for professionals. Transform chaos int
 
 ## Prerequisites
 
-- **Python** (3.8+)
-- **Node.js** (16+)
+- **Python** 3.8+
+- **Node.js** 16+
 - **npm** or **yarn**
-
-## Installation
-
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/jaggerjack61/SchemaField.git
-cd SchemaField
-```
-
-_(Note: If you downloaded the project manually, navigate to the project root directory)._
 
 ---
 
-## Docker (Recommended)
+## Quick Start
+
+### Docker (Recommended)
 
 This repo includes a Docker-based dev setup that runs:
 
-- Backend (Django) at `http://localhost:8000`
-- Frontend (Vite) at `http://localhost:5173` (proxies `/api` and `/media` to the backend)
-
-### Start the stack
-
-From the repo root:
+- **Backend** (Django) at `http://localhost:8000`
+- **Frontend** (Vite) at `http://localhost:5173` (proxies `/api` and `/media` to the backend)
 
 ```bash
+# Start the stack
 docker compose up --build
-```
 
-Stop:
-
-```bash
+# Stop
 docker compose down
-```
 
-Reset containers + volumes (fresh DB):
-
-```bash
+# Reset containers + volumes (fresh DB)
 docker compose down -v
 ```
 
-### Superuser / Admin
+#### Superuser / Admin
 
 Interactive (recommended):
 
@@ -58,107 +40,144 @@ Interactive (recommended):
 docker compose exec backend python manage.py createsuperuser
 ```
 
-Optional automatic superuser creation: set these environment variables on the `backend` service:
+Or set these environment variables on the `backend` service for automatic creation:
 
 - `DJANGO_SUPERUSER_EMAIL`
 - `DJANGO_SUPERUSER_NAME`
 - `DJANGO_SUPERUSER_PASSWORD`
 
-### SQLite persistence in Docker
+#### SQLite persistence in Docker
 
-When running via Docker Compose, SQLite uses a named Docker volume at `/data/db.sqlite3` (not the `backend/db.sqlite3` file on your host). This avoids accidentally “sharing” a host database via the code bind mount.
+When running via Docker Compose, SQLite uses a named Docker volume at `/data/db.sqlite3` (not the `backend/db.sqlite3` file on your host). This avoids accidentally "sharing" a host database via the code bind mount.
 
-### 2. Backend Setup (Django)
+---
 
-Navigate to the `backend` directory:
+### Manual Setup
+
+#### Backend (Django)
 
 ```bash
 cd backend
-```
 
-#### Create and Activate Virtual Environment
-
-**Windows:**
-
-```bash
+# Create and activate virtual environment
 python -m venv venv
+# Windows:
 venv\Scripts\activate
-```
-
-**macOS/Linux:**
-
-```bash
-python3 -m venv venv
+# macOS/Linux:
 source venv/bin/activate
-```
 
-#### Install Dependencies
-
-```bash
+# Install dependencies
 pip install -r requirements.txt
-```
 
-#### Database Setup
-
-Run migrations to set up the SQLite database:
-
-```bash
+# Run migrations
 python manage.py migrate
-```
 
-_(Optional) Create a superuser for the admin panel:_
-
-```bash
+# (Optional) Create a superuser
 python manage.py createsuperuser
-```
 
-#### Run the Backend Server
-
-```bash
+# Start the server
 python manage.py runserver
 ```
 
 The backend API will be available at `http://127.0.0.1:8000`.
 
----
-
-### 3. Frontend Setup (React + Vite)
-
-Open a new terminal and navigate to the `frontend` directory:
+#### Frontend (React + Vite)
 
 ```bash
 cd frontend
-```
 
-#### Install Dependencies
-
-```bash
+# Install dependencies
 npm install
-# or
-yarn install
-```
 
-#### Environment Variables
-
-Create a `.env` file in the `frontend` directory if needed (defaults are usually configured in code for local dev), or ensure the API URL points to the backend (default `http://127.0.0.1:8000`).
-
-#### Run the Frontend Development Server
-
-```bash
+# Start the dev server
 npm run dev
-# or
-yarn dev
 ```
 
-The application will be available at `http://localhost:5173` (or the port shown in the terminal).
+The frontend will be available at `http://localhost:5173`.
 
-## Usage
+#### One-Command Start (Windows)
 
-1.  Open your browser and navigate to the frontend URL (e.g., `http://localhost:5173`).
-2.  Register a new account or log in.
-3.  Create new forms ("Schemas"), add questions, and publish them.
-4.  Share the form link to collect data.
-5.  View responses in the Dashboard.
+Run `start.bat` from the project root to automatically set up the venv, install dependencies, run migrations, and start both backend and frontend in separate windows.
+
+---
+
+## API Overview
+
+| Endpoint | Description |
+|---|---|
+| `GET /health` | Health check |
+| `POST /api/auth/login/` | Obtain JWT token |
+| `GET /api/auth/me/` | Current user info |
+| `POST /api/auth/change-password/` | Change password |
+| `/api/forms/` | CRUD for forms (with sections, questions, choices) |
+| `/api/users/` | User management (admin) |
+| `/api/permissions/` | Form permission management |
+| `POST /api/upload-question-media/` | Upload media for questions |
+
+---
+
+## Features
+
+### Forms & Data Capture
+
+- **Schema-driven forms** with sections, ordered questions, and typed fields
+- **Question types:** short text, long text, number, float, multiple choice, multiple select, media upload
+- **Form deadlines** with automatic closing
+- **QR code generation** for every form (auto-generated on creation)
+- **Public form sharing** via unique `share_id` links (`/f/{shareId}`)
+- **Per-user form archiving** without affecting other collaborators
+
+### Collaboration & Permissions
+
+- **Form-level permissions** — grant `edit` or `view_responses` access to other users
+- Owners and permitted users can manage forms and view responses
+
+### Responses & Analytics
+
+- **Response collection** with text, file, and choice-based answers
+- **Form analytics** dashboard (`/forms/:id/responses/analytics`)
+- **Response viewer** with per-form breakdown (`/forms/:id/responses`)
+
+### Admin Panel
+
+- **User management** — view, edit, and manage users (`/admin/users`)
+- **File management** — view and manage uploaded files (`/admin/files`)
+
+### User Account
+
+- **Profile page** (`/profile`)
+- **Password change** support
+
+---
+
+## Frontend Routes
+
+| Route | Page | Access |
+|---|---|---|
+| `/` | Landing page | Public |
+| `/login` | Login | Public |
+| `/f/:shareId` | Public form view | Public |
+| `/dashboard` | Dashboard | Authenticated |
+| `/profile` | User profile | Authenticated |
+| `/forms/new` | Form builder | Authenticated |
+| `/forms/:id/edit` | Form builder | Authenticated |
+| `/forms/:id/preview` | Form preview | Authenticated |
+| `/forms/:id/responses` | Form responses | Authenticated |
+| `/forms/:id/responses/analytics` | Form analytics | Authenticated |
+| `/admin` | Admin panel | Admin only |
+| `/admin/users` | User management | Admin only |
+| `/admin/files` | File management | Admin only |
+
+---
+
+## Convenience Scripts
+
+| Script | Description |
+|---|---|
+| `start.bat` | One-command Windows startup (venv setup, migrations, both servers) |
+| `g.bat` | Git helper — `g.bat "message"` to add/commit/push, `-p` to pull, `-b <branch>` to checkout |
+
+---
 
 ## License
 
