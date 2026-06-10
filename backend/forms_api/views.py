@@ -290,8 +290,24 @@ class UserViewSet(viewsets.ModelViewSet):
             for row in question_media_rows
         }
 
-        # Merge both maps (answer_map takes priority)
-        file_map = {**question_media_map, **answer_map}
+        # Also map QR code files to their parent form
+        qrcode_rows = Form.objects.exclude(
+            qr_code=''
+        ).exclude(
+            qr_code__isnull=True
+        ).values(
+            'qr_code', 'id', 'title'
+        )
+        qrcode_map = {
+            row['qr_code']: {
+                'form_id': row['id'],
+                'form_title': row['title'],
+            }
+            for row in qrcode_rows
+        }
+
+        # Merge all maps (answer_map takes priority)
+        file_map = {**qrcode_map, **question_media_map, **answer_map}
 
         directories = []
         files = []

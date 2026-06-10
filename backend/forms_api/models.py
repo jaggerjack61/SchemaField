@@ -71,7 +71,7 @@ class Form(models.Model):
         # Save first to ensure share_id is set
         is_new = self.pk is None
         super().save(*args, **kwargs)
-        if is_new or not self.qr_code:
+        if is_new and not self.qr_code:
             self._generate_qr_code()
 
     def _generate_qr_code(self):

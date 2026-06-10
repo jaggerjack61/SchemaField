@@ -132,7 +132,7 @@ export default function AdminUserManagement() {
                 </td>
                 <td>{user.is_active ? 'Active' : 'Inactive'}</td>
                 <td>{new Date(user.date_joined).toLocaleDateString()}</td>
-                <td>
+                <td style={{ display: 'flex', gap: '0.5rem' }}>
                   <button
                     className="btn btn-secondary"
                     onClick={() => setResetId(user.id)}
