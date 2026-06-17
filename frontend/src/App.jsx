@@ -9,6 +9,7 @@ const FormBuilder = lazy(() => import('./pages/FormBuilder'))
 const FormPreview = lazy(() => import('./pages/FormPreview'))
 const PublicFormView = lazy(() => import('./pages/PublicFormView'))
 const FormResponses = lazy(() => import('./pages/FormResponses'))
+const FormSpreadsheet = lazy(() => import('./pages/FormSpreadsheet'))
 const FormAnalytics = lazy(() => import('./pages/FormAnalytics'))
 const Login = lazy(() => import('./pages/Login'))
 const LandingPage = lazy(() => import('./pages/LandingPage'))
@@ -39,6 +40,7 @@ function App() {
               <Route path="/forms/:id/edit" element={<FormBuilder />} />
               <Route path="/forms/:id/preview" element={<FormPreview />} />
               <Route path="/forms/:id/responses" element={<FormResponses />} />
+              <Route path="/forms/:id/responses/spreadsheet" element={<FormSpreadsheet />} />
               <Route path="/forms/:id/responses/analytics" element={<FormAnalytics />} />
             </Route>
 

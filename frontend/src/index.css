@@ -10,6 +10,7 @@
 @import "./styles/pages/builder.css";
 @import "./styles/pages/preview.css";
 @import "./styles/pages/analytics.css";
+@import "./styles/pages/spreadsheet.css";
 @import "./styles/components/overlays.css";
 @import "./styles/components/permissions-modal.css";
 @import "./styles/animations.css";

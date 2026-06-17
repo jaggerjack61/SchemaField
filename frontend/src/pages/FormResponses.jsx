@@ -81,6 +81,9 @@ export default function FormResponses() {
           >
             📊 View Analytics
           </Link>
+          <Link to={`/forms/${id}/responses/spreadsheet`} className="btn btn-secondary">
+            📋 View Spreadsheet
+          </Link>
           <button onClick={handleExportCSV} className="btn btn-secondary">
             ⬇ Export CSV
           </button>

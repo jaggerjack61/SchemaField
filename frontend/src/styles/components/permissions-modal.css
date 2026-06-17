@@ -49,9 +49,11 @@
   color: var(--text-primary);
   font-family: var(--font);
   font-size: 0.85rem;
-  padding: 10px 14px;
+  padding: 6px 14px;
+  height: 32px;
   outline: none;
   transition: border-color var(--transition);
+  box-sizing: border-box;
 }
 
 .permissions-form input:focus {
@@ -65,10 +67,12 @@
   color: var(--text-primary);
   font-family: var(--font);
   font-size: 0.85rem;
-  padding: 10px 14px;
+  padding: 6px 14px;
+  height: 32px;
   outline: none;
   cursor: pointer;
   transition: border-color var(--transition);
+  box-sizing: border-box;
 }
 
 .permissions-form select:focus {
@@ -77,7 +81,8 @@
 
 .permissions-form .btn {
   white-space: nowrap;
-  padding: 10px 16px;
+  height: 32px;
+  padding: 0 16px;
   font-size: 0.85rem;
 }
 
