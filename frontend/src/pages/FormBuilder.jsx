@@ -29,6 +29,8 @@ export default function FormBuilder() {
   const [loading, setLoading] = useState(isEdit)
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState(null)
+  const [shareForm, setShareForm] = useState(null)
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     if (!isEdit) return
@@ -76,6 +78,21 @@ export default function FormBuilder() {
   function showToast(message, type) {
     setToast({ message, type })
     setTimeout(() => setToast(null), 3000)
+  }
+
+  function handleShareClick() {
+    setCopied(false)
+    setShareForm(form)
+  }
+
+  function getShareUrl(f) {
+    return `${window.location.origin}/f/${f.share_id}`
+  }
+
+  function copyShareLink() {
+    navigator.clipboard.writeText(getShareUrl(shareForm))
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }
 
   function getDefaultForm() {
@@ -342,11 +359,7 @@ export default function FormBuilder() {
             </button>
             <button
               className="btn btn-secondary"
-              onClick={() => {
-                const url = `${window.location.origin}/forms/${id}/view`
-                navigator.clipboard.writeText(url)
-                showToast('Link copied to clipboard!', 'success')
-              }}
+              onClick={handleShareClick}
             >
               🔗 Share
             </button>
@@ -366,6 +379,39 @@ export default function FormBuilder() {
           />
         ))}
       </div>
+
+      {/* Share Modal */}
+      {shareForm && (
+        <div className="share-modal-overlay" onClick={() => setShareForm(null)}>
+          <div className="share-modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Share "{shareForm.title}"</h3>
+
+            {shareForm.qr_code && (
+              <div className="qr-container">
+                <img src={shareForm.qr_code} alt="QR Code" />
+              </div>
+            )}
+
+            <div className="share-link-box">
+              <input
+                type="text"
+                value={getShareUrl(shareForm)}
+                readOnly
+                onClick={(e) => e.target.select()}
+              />
+              <button className="btn btn-primary" onClick={copyShareLink}>
+                {copied ? '✅ Copied!' : '📋 Copy'}
+              </button>
+            </div>
+
+            <div className="share-modal-actions">
+              <button className="btn btn-secondary" onClick={() => setShareForm(null)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Toast */}
       {toast && <div className={`toast ${toast.type}`}>{toast.message}</div>}
