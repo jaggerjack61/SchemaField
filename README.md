@@ -7,7 +7,7 @@ A modern, schematic data capture platform for professionals. Transform chaos int
 ## Prerequisites
 
 - **Python** 3.8+
-- **Node.js** 16+
+- **Node.js** 18+ (required by Vite 5)
 - **npm** or **yarn**
 
 ---
@@ -60,11 +60,11 @@ When running via Docker Compose, SQLite uses a named Docker volume at `/data/db.
 cd backend
 
 # Create and activate virtual environment
-python -m venv venv
+python -m venv .venv
 # Windows:
-venv\Scripts\activate
+.venv\Scripts\activate
 # macOS/Linux:
-source venv/bin/activate
+source .venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
@@ -108,9 +108,22 @@ Run `start.bat` from the project root to automatically set up the venv, install 
 | `GET /health` | Health check |
 | `POST /api/auth/login/` | Obtain JWT token |
 | `GET /api/auth/me/` | Current user info |
+| `PATCH /api/auth/me/` | Update profile (name) |
 | `POST /api/auth/change-password/` | Change password |
 | `/api/forms/` | CRUD for forms (with sections, questions, choices) |
+| `GET /api/forms/by-share-id/{share_id}/` | Get form by share ID (public) |
+| `POST /api/forms/{id}/submit/` | Submit a form response (public) |
+| `GET /api/forms/{id}/responses/` | Paginated responses for a form |
+| `GET /api/forms/{id}/export_csv/` | Stream responses as CSV |
+| `POST /api/forms/{id}/archive/` | Archive a form for the current user |
+| `POST /api/forms/{id}/restore/` | Restore (un-archive) a form |
 | `/api/users/` | User management (admin) |
+| `POST /api/users/{id}/reset_password/` | Admin reset user password |
+| `GET /api/users/file-manager/summary/` | Storage usage summary (admin) |
+| `GET /api/users/file-manager/browser/` | Paginated media file browser (admin) |
+| `DELETE /api/users/file-manager/file/?path=` | Delete a managed file (admin) |
+| `GET /api/users/file-manager/cleanup-preview/` | Preview orphaned files (admin) |
+| `POST /api/users/file-manager/cleanup-orphaned-files/` | Delete orphaned files (admin) |
 | `/api/permissions/` | Form permission management |
 | `POST /api/upload-question-media/` | Upload media for questions |
 
@@ -122,9 +135,11 @@ Run `start.bat` from the project root to automatically set up the venv, install 
 
 - **Schema-driven forms** with sections, ordered questions, and typed fields
 - **Question types:** short text, long text, number, float, multiple choice, multiple select, media upload
+- **Question media** — attach images/video/audio to questions (10 MB max, type-validated)
 - **Form deadlines** with automatic closing
 - **QR code generation** for every form (auto-generated on creation)
 - **Public form sharing** via unique `share_id` links (`/f/{shareId}`)
+- **Public submissions** — no auth required to submit a response
 - **Per-user form archiving** without affecting other collaborators
 
 ### Collaboration & Permissions
@@ -135,17 +150,19 @@ Run `start.bat` from the project root to automatically set up the venv, install 
 ### Responses & Analytics
 
 - **Response collection** with text, file, and choice-based answers
+- **Paginated response viewer** with per-form breakdown (`/forms/:id/responses`)
+- **Spreadsheet view** for scanning responses row-by-row (`/forms/:id/responses/spreadsheet`)
+- **CSV export** — streaming download of all responses (`/api/forms/{id}/export_csv/`)
 - **Form analytics** dashboard (`/forms/:id/responses/analytics`)
-- **Response viewer** with per-form breakdown (`/forms/:id/responses`)
 
 ### Admin Panel
 
-- **User management** — view, edit, and manage users (`/admin/users`)
-- **File management** — view and manage uploaded files (`/admin/files`)
+- **User management** — view, edit, create, and reset passwords (`/admin/users`)
+- **File management** — browse, delete, and clean up orphaned uploaded files (`/admin/files`)
 
 ### User Account
 
-- **Profile page** (`/profile`)
+- **Profile page** (`/profile`) with editable name
 - **Password change** support
 
 ---
@@ -157,12 +174,14 @@ Run `start.bat` from the project root to automatically set up the venv, install 
 | `/` | Landing page | Public |
 | `/login` | Login | Public |
 | `/f/:shareId` | Public form view | Public |
+| `/forms/:id/view` | Public form view (by form ID) | Public |
 | `/dashboard` | Dashboard | Authenticated |
 | `/profile` | User profile | Authenticated |
 | `/forms/new` | Form builder | Authenticated |
 | `/forms/:id/edit` | Form builder | Authenticated |
 | `/forms/:id/preview` | Form preview | Authenticated |
 | `/forms/:id/responses` | Form responses | Authenticated |
+| `/forms/:id/responses/spreadsheet` | Form responses (spreadsheet) | Authenticated |
 | `/forms/:id/responses/analytics` | Form analytics | Authenticated |
 | `/admin` | Admin panel | Admin only |
 | `/admin/users` | User management | Admin only |
@@ -175,7 +194,9 @@ Run `start.bat` from the project root to automatically set up the venv, install 
 | Script | Description |
 |---|---|
 | `start.bat` | One-command Windows startup (venv setup, migrations, both servers) |
+| `start.ps1` | PowerShell equivalent of `start.bat` |
 | `g.bat` | Git helper — `g.bat "message"` to add/commit/push, `-p` to pull, `-b <branch>` to checkout |
+| `backend/p.bat` | Django helper — `p` runserver, `p <port>` runserver on port, `-a` activate venv, `-m` migrate, `-m -r` refresh DB + migrate, `-cs` createsuperuser, `-c` check |
 
 ---
 
