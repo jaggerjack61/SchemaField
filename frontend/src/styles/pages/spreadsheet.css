@@ -2,17 +2,44 @@
    Spreadsheet View
    ============================================================ */
 
+/* Full-screen spreadsheet layout: let the grid span the viewport */
+.main-content:has(.spreadsheet-page) {
+  max-width: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.spreadsheet-page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.spreadsheet-page .dashboard-header {
+  padding: 24px 32px;
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
 .spreadsheet-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
   overflow: hidden;
 }
 
 .spreadsheet-scroll {
+  flex: 1;
   overflow: auto;
-  max-height: calc(100vh - 240px);
+  max-height: none;
 }
 
 .spreadsheet-table {
@@ -22,6 +49,29 @@
   border-spacing: 0;
   font-size: 0.85rem;
   color: var(--text-primary);
+}
+
+.spreadsheet-filler-row td {
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+
+.spreadsheet-filler-row td.row-header {
+  background: var(--bg-secondary) !important;
+}
+
+.spreadsheet-filler-row td:last-child {
+  border-right: none;
+}
+
+.spreadsheet-table tbody tr.spreadsheet-filler-row td {
+  border-bottom: 1px solid var(--border);
+}
+
+.spreadsheet-table tbody tr.spreadsheet-filler-row:nth-child(even) td,
+.spreadsheet-table tbody tr.spreadsheet-filler-row:hover td {
+  background: var(--bg-card);
 }
 
 .spreadsheet-table thead th {
@@ -143,7 +193,7 @@
 }
 
 @media (max-width: 640px) {
-  .spreadsheet-scroll {
-    max-height: calc(100vh - 280px);
+  .spreadsheet-page .dashboard-header {
+    padding: 16px 20px;
   }
 }

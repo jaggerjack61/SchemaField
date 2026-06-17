@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { getForm, getFormResponses, exportFormResponses } from '../api'
 
@@ -9,6 +9,10 @@ export default function FormSpreadsheet() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [sort, setSort] = useState({ key: 'submittedAt', direction: 'desc' })
+  const scrollRef = useRef(null)
+  const [fillerRowCount, setFillerRowCount] = useState(0)
+  const [fillerRemainder, setFillerRemainder] = useState(0)
+  const [dataRowHeight, setDataRowHeight] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -94,6 +98,44 @@ export default function FormSpreadsheet() {
     })
   }, [rows, sort])
 
+  useLayoutEffect(() => {
+    function updateFillerRows() {
+      const scrollEl = scrollRef.current
+      if (!scrollEl) return
+      const tableEl = scrollEl.querySelector('table')
+      if (!tableEl) return
+
+      const dataRowEl = tableEl.querySelector('tbody tr:not(.spreadsheet-filler-row)')
+      if (!dataRowEl) return
+
+      const existingFillers = tableEl.querySelectorAll('tbody tr.spreadsheet-filler-row')
+      const existingFillerHeight = Array.from(existingFillers).reduce(
+        (sum, row) => sum + row.offsetHeight,
+        0
+      )
+
+      const usedHeight = tableEl.offsetHeight - existingFillerHeight
+      const availableHeight = scrollEl.clientHeight
+      const emptySpace = Math.max(0, availableHeight - usedHeight)
+      const rowHeight = dataRowEl.offsetHeight
+      if (rowHeight > 0) {
+        const fullRows = Math.floor(emptySpace / rowHeight)
+        const remainder = emptySpace - fullRows * rowHeight
+        setFillerRowCount(fullRows)
+        setFillerRemainder(remainder)
+        setDataRowHeight(rowHeight)
+      } else {
+        setFillerRowCount(0)
+        setFillerRemainder(0)
+        setDataRowHeight(0)
+      }
+    }
+
+    updateFillerRows()
+    window.addEventListener('resize', updateFillerRows)
+    return () => window.removeEventListener('resize', updateFillerRows)
+  }, [sortedRows])
+
   function handleSort(key) {
     setSort((current) => {
       if (current.key === key) {
@@ -125,7 +167,7 @@ export default function FormSpreadsheet() {
   if (error) return <div className="empty-state"><h2>{error}</h2></div>
 
   return (
-    <div className="dashboard">
+    <div className="dashboard spreadsheet-page">
       <div className="dashboard-header">
         <div>
           <h1>Spreadsheet: {form.title}</h1>
@@ -149,7 +191,7 @@ export default function FormSpreadsheet() {
         </div>
       ) : (
         <div className="spreadsheet-wrapper">
-          <div className="spreadsheet-scroll">
+          <div className="spreadsheet-scroll" ref={scrollRef}>
             <table className="spreadsheet-table">
               <thead>
                 <tr>
@@ -211,6 +253,34 @@ export default function FormSpreadsheet() {
                     ))}
                   </tr>
                 ))}
+                {fillerRowCount > 0 &&
+                  Array.from({ length: fillerRowCount }, (_, i) => (
+                    <tr
+                      key={`filler-${i}`}
+                      className="spreadsheet-filler-row"
+                      aria-hidden="true"
+                      style={dataRowHeight > 0 ? { height: dataRowHeight } : undefined}
+                    >
+                      {columns.map((col, colIndex) => (
+                        <td
+                          key={col.key}
+                          className={colIndex === 0 ? 'row-header' : ''}
+                          style={{ minWidth: col.width, maxWidth: col.width }}
+                        />
+                      ))}
+                    </tr>
+                  ))}
+                {fillerRemainder > 0 && (
+                  <tr className="spreadsheet-filler-row spreadsheet-filler-remainder" aria-hidden="true">
+                    {columns.map((col, colIndex) => (
+                      <td
+                        key={col.key}
+                        className={colIndex === 0 ? 'row-header' : ''}
+                        style={{ minWidth: col.width, maxWidth: col.width, height: fillerRemainder }}
+                      />
+                    ))}
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
