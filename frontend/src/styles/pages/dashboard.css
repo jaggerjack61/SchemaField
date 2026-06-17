@@ -5,7 +5,21 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
   margin-bottom: 32px;
+}
+
+/* Title block: allow it to shrink so long titles ellipsize
+   instead of squeezing the adjacent action buttons. */
+.dashboard-header > div:first-child {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* Action buttons block: never shrink, never wrap. */
+.dashboard-header > div:last-child {
+  flex-shrink: 0;
+  flex-wrap: nowrap;
 }
 
 .dashboard-header h1 {
@@ -15,6 +29,9 @@
   letter-spacing: -0.04em;
   background: none;
   -webkit-text-fill-color: initial;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dashboard-header .form-count {

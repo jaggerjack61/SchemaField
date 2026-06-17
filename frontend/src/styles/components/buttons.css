@@ -13,6 +13,8 @@
   justify-content: center;
   gap: 8px;
   line-height: normal;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .btn-primary {
