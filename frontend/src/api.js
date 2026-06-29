@@ -86,7 +86,7 @@ export const uploadQuestionMedia = (file) => {
 }
 
 // Users (Admin)
-export const getUsers = () => api.get('/users/')
+export const getUsers = (search = '') => api.get('/users/', { params: search ? { search } : {} })
 export const createUser = (data) => api.post('/users/', data)
 export const updateUser = (id, data) => api.patch(`/users/${id}/`, data)
 export const resetUserPassword = (id, password) => api.post('/users/' + id + '/reset_password/', { password })

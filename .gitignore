@@ -2,3 +2,5 @@
 .env.*
 *.sqlite3
 .playwright-mcp/
+plan.md
+tmp/

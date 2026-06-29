@@ -149,9 +149,18 @@ class ChangePasswordView(APIView):
 
 
 class UserViewSet(viewsets.ModelViewSet):
-    queryset = User.objects.all()
+    queryset = User.objects.all().order_by('-date_joined')
     serializer_class = UserSerializer
     permission_classes = [IsAdmin]
+
+    def get_queryset(self):
+        qs = User.objects.all().order_by('-date_joined')
+        search = (self.request.query_params.get('search') or '').strip()
+        if search:
+            qs = qs.filter(
+                Q(name__icontains=search) | Q(email__icontains=search)
+            )
+        return qs
 
     def get_serializer_class(self):
         if self.action == 'create':

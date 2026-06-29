@@ -5,6 +5,8 @@ import { getUsers, createUser, updateUser, resetUserPassword } from '../api'
 export default function AdminUserManagement() {
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [showModal, setShowModal] = useState(false)
 
   const [newUser, setNewUser] = useState({ email: '', name: '', password: '', role: 'user' })
@@ -21,12 +23,20 @@ export default function AdminUserManagement() {
   const [toast, setToast] = useState(null)
 
   useEffect(() => {
-    loadUsers()
-  }, [])
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [searchQuery])
 
-  async function loadUsers() {
+  useEffect(() => {
+    loadUsers(debouncedSearch)
+  }, [debouncedSearch])
+
+  async function loadUsers(search = '') {
+    setLoading(true)
     try {
-      const { data } = await getUsers()
+      const { data } = await getUsers(search)
       // Handle paginated response (DRF default) or plain array
       setUsers(data.results ?? data)
     } catch (err) {
@@ -92,8 +102,6 @@ export default function AdminUserManagement() {
     setTimeout(() => setToast(null), 3000)
   }
 
-  if (loading) return <div className="loading"><div className="spinner" /></div>
-
   return (
     <div className="dashboard">
       <div className="dashboard-header">
@@ -109,6 +117,16 @@ export default function AdminUserManagement() {
       </div>
 
       <div className="form-card admin-table-wrapper">
+        <div className="admin-search-bar">
+          <input
+            type="text"
+            placeholder="Search users by name or email..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            className="admin-modal-input"
+            aria-label="Search users"
+          />
+        </div>
         <table className="admin-data-table">
           <thead>
             <tr>
@@ -121,33 +139,49 @@ export default function AdminUserManagement() {
             </tr>
           </thead>
           <tbody>
-            {users.map(user => (
-              <tr key={user.id}>
-                <td>{user.name}</td>
-                <td>{user.email}</td>
-                <td>
-                  <span className={user.role === 'admin' ? 'badge-owned' : 'badge-shared'}>
-                    {user.role}
-                  </span>
-                </td>
-                <td>{user.is_active ? 'Active' : 'Inactive'}</td>
-                <td>{new Date(user.date_joined).toLocaleDateString()}</td>
-                <td style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button
-                    className="btn btn-secondary"
-                    onClick={() => setResetId(user.id)}
-                  >
-                    Reset Pass
-                  </button>
-                  <button
-                    className="btn btn-secondary"
-                    onClick={() => openEditModal(user)}
-                  >
-                    Edit
-                  </button>
+            {loading ? (
+              <tr>
+                <td colSpan="6" className="admin-table-loading">
+                  <div className="loading">
+                    <div className="spinner" />
+                  </div>
                 </td>
               </tr>
-            ))}
+            ) : users.length === 0 ? (
+              <tr>
+                <td colSpan="6" className="admin-table-empty">
+                  No users found.
+                </td>
+              </tr>
+            ) : (
+              users.map(user => (
+                <tr key={user.id}>
+                  <td>{user.name}</td>
+                  <td>{user.email}</td>
+                  <td>
+                    <span className={user.role === 'admin' ? 'badge-owned' : 'badge-shared'}>
+                      {user.role}
+                    </span>
+                  </td>
+                  <td>{user.is_active ? 'Active' : 'Inactive'}</td>
+                  <td>{new Date(user.date_joined).toLocaleDateString()}</td>
+                  <td style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button
+                      className="btn btn-secondary"
+                      onClick={() => setResetId(user.id)}
+                    >
+                      Reset Pass
+                    </button>
+                    <button
+                      className="btn btn-secondary"
+                      onClick={() => openEditModal(user)}
+                    >
+                      Edit
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>

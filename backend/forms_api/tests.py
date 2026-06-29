@@ -10,6 +10,56 @@ import tempfile
 from .models import Choice, Form, FormArchive, FormPermission, Question, Section, User
 
 
+class UserSearchTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.admin = User.objects.create_user(
+            email='search-admin@example.com',
+            password='password123',
+            name='Search Admin',
+            role='admin',
+        )
+        self.user_alice = User.objects.create_user(
+            email='alice@example.com',
+            password='password123',
+            name='Alice Smith',
+            role='user',
+        )
+        self.user_bob = User.objects.create_user(
+            email='bob@example.com',
+            password='password123',
+            name='Bob Jones',
+            role='user',
+        )
+
+    def test_search_filters_users_by_name(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get(reverse('user-list'), {'search': 'alice'})
+        self.assertEqual(response.status_code, 200)
+        results = response.data.get('results', response.data)
+        emails = [u['email'] for u in results]
+        self.assertIn(self.user_alice.email, emails)
+        self.assertNotIn(self.user_bob.email, emails)
+
+    def test_search_filters_users_by_email(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get(reverse('user-list'), {'search': 'bob@example'})
+        self.assertEqual(response.status_code, 200)
+        results = response.data.get('results', response.data)
+        emails = [u['email'] for u in results]
+        self.assertIn(self.user_bob.email, emails)
+        self.assertNotIn(self.user_alice.email, emails)
+
+    def test_empty_search_returns_all_users(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get(reverse('user-list'))
+        self.assertEqual(response.status_code, 200)
+        results = response.data.get('results', response.data)
+        emails = [u['email'] for u in results]
+        self.assertIn(self.user_alice.email, emails)
+        self.assertIn(self.user_bob.email, emails)
+
+
 class FormAccessTests(TestCase):
     def setUp(self):
         self.client = APIClient()

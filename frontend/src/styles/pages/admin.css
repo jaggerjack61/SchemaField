@@ -111,6 +111,15 @@ tr:last-child {
   font-weight: 500;
 }
 
+/* Admin search bar */
+.admin-search-bar {
+  margin-bottom: 1rem;
+}
+
+.admin-search-bar .admin-modal-input {
+  max-width: 320px;
+}
+
 /* Admin table wrapper */
 .admin-table-wrapper {
   overflow-x: auto;
@@ -132,6 +141,17 @@ tr:last-child {
 
 .admin-data-table tbody tr:hover {
   background: var(--bg-secondary);
+}
+
+.admin-table-loading,
+.admin-table-empty {
+  text-align: center;
+  padding: 2rem 1rem;
+  color: var(--text-secondary);
+}
+
+.admin-table-loading .loading {
+  padding: 1.5rem 0;
 }
 
 /* Admin modal forms */
