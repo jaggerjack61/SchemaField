@@ -117,7 +117,7 @@ Run `start.bat` from the project root to automatically set up the venv, install 
 | `GET /api/forms/{id}/export_csv/` | Stream responses as CSV |
 | `POST /api/forms/{id}/archive/` | Archive a form for the current user |
 | `POST /api/forms/{id}/restore/` | Restore (un-archive) a form |
-| `/api/users/` | User management (admin) |
+| `/api/users/` | User management (admin); supports `?search=` query (filters by name/email) |
 | `POST /api/users/{id}/reset_password/` | Admin reset user password |
 | `GET /api/users/file-manager/summary/` | Storage usage summary (admin) |
 | `GET /api/users/file-manager/browser/` | Paginated media file browser (admin) |
