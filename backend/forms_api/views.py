@@ -3,10 +3,10 @@ import rest_framework
 from rest_framework.decorators import action
 from rest_framework.response import Response as DRFResponse
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
-from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
-from django.db.models import Q, Count
+from django.db.models import Q, Count, Prefetch
 from django.contrib.auth import get_user_model
 from django.conf import settings
 from django.http import StreamingHttpResponse
@@ -14,6 +14,7 @@ from django.utils import timezone
 
 from pathlib import Path
 import csv
+import heapq
 import io
 import os
 import shutil
@@ -28,40 +29,35 @@ from .serializers import (
     UpdateProfileSerializer, ChangePasswordSerializer
 )
 from .permissions import IsAdmin, IsFormOwner, HasFormPermission
+from .upload_validation import (
+    MAX_SUBMISSION_UPLOAD_SIZE,
+    media_upload_error,
+)
+
+
+class UploadRateThrottle(UserRateThrottle):
+    rate = '30/min'
+
+
+class SubmissionRateThrottle(AnonRateThrottle):
+    rate = '60/hour'
 
 
 class UploadQuestionMediaView(APIView):
     """Upload a media file (image/video/audio) to attach to a question."""
     permission_classes = [permissions.IsAuthenticated]
+    throttle_classes = [UploadRateThrottle]
 
     def post(self, request):
         file = request.FILES.get('file')
         if not file:
             return DRFResponse({'detail': 'No file provided.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Validate file type
-        allowed_types = [
-            'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
-            'video/mp4', 'video/webm', 'video/ogg',
-            'audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/webm', 'audio/mp4',
-        ]
-        if file.content_type not in allowed_types:
-            return DRFResponse(
-                {'detail': f'Unsupported file type: {file.content_type}'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        validation_error = media_upload_error(file)
+        if validation_error:
+            return DRFResponse({'detail': validation_error}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Validate file extension
-        allowed_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg',
-                              '.mp4', '.webm', '.ogv',
-                              '.mp3', '.ogg', '.wav', '.m4a']
         ext = os.path.splitext(file.name)[1].lower()
-        if ext not in allowed_extensions:
-            return DRFResponse({'detail': f'Unsupported file extension: {ext}'}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Validate file size
-        if file.size > 10 * 1024 * 1024:  # 10 MB
-            return DRFResponse({'detail': 'File too large. Maximum size is 10 MB.'}, status=status.HTTP_400_BAD_REQUEST)
 
         # Save using a temporary Question-like path
         from django.core.files.storage import default_storage
@@ -118,6 +114,12 @@ class FileManagerRateThrottle(UserRateThrottle):
 
 class LoginView(TokenObtainPairView):
     serializer_class = LoginSerializer
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = [LoginRateThrottle]
+
+
+class RefreshTokenView(TokenRefreshView):
+    permission_classes = [permissions.AllowAny]
     throttle_classes = [LoginRateThrottle]
 
 
@@ -199,7 +201,10 @@ class UserViewSet(viewsets.ModelViewSet):
         referenced_files = referenced_upload_files | referenced_qrcode_files | referenced_question_media
 
         orphaned_files = []
-        for root in [uploads_root, qrcodes_root]:
+        question_media_root = (media_root / 'question_media').resolve()
+        question_media_root.mkdir(parents=True, exist_ok=True)
+
+        for root in [uploads_root, qrcodes_root, question_media_root]:
             for path in root.rglob('*'):
                 if not path.is_file():
                     continue
@@ -268,56 +273,6 @@ class UserViewSet(viewsets.ModelViewSet):
         if not current_dir.exists() or not current_dir.is_dir():
             return DRFResponse({'detail': 'Directory not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-        answer_file_rows = Answer.objects.exclude(file_answer='').exclude(file_answer__isnull=True).select_related(
-            'response__form'
-        ).values('file_answer', 'response__form__id', 'response__form__title')
-        answer_map = {
-            row['file_answer']: {
-                'form_id': row['response__form__id'],
-                'form_title': row['response__form__title'],
-            }
-            for row in answer_file_rows
-        }
-
-        # Also map question media files to their parent form
-        question_media_rows = Question.objects.exclude(
-            media_file=''
-        ).exclude(
-            media_file__isnull=True
-        ).select_related(
-            'section__form'
-        ).values(
-            'media_file',
-            'section__form__id',
-            'section__form__title'
-        )
-        question_media_map = {
-            row['media_file']: {
-                'form_id': row['section__form__id'],
-                'form_title': row['section__form__title'],
-            }
-            for row in question_media_rows
-        }
-
-        # Also map QR code files to their parent form
-        qrcode_rows = Form.objects.exclude(
-            qr_code=''
-        ).exclude(
-            qr_code__isnull=True
-        ).values(
-            'qr_code', 'id', 'title'
-        )
-        qrcode_map = {
-            row['qr_code']: {
-                'form_id': row['id'],
-                'form_title': row['title'],
-            }
-            for row in qrcode_rows
-        }
-
-        # Merge all maps (answer_map takes priority)
-        file_map = {**qrcode_map, **question_media_map, **answer_map}
-
         directories = []
         files = []
 
@@ -335,9 +290,47 @@ class UserViewSet(viewsets.ModelViewSet):
         )
         offset = (page - 1) * page_size
 
-        all_entries = sorted(current_dir.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
-        total_entries = len(all_entries)
-        paginated_entries = all_entries[offset:offset + page_size]
+        total_entries = sum(1 for _ in current_dir.iterdir())
+        requested_count = min(offset + page_size, total_entries)
+        paginated_entries = heapq.nsmallest(
+            requested_count,
+            current_dir.iterdir(),
+            key=lambda path: (not path.is_dir(), path.name.lower()),
+        )[offset:]
+
+        # Only query metadata for files shown on this page. Previously every
+        # managed-file row was loaded for each page request.
+        page_file_paths = [
+            entry.relative_to(media_root).as_posix()
+            for entry in paginated_entries
+            if entry.is_file()
+        ]
+        answer_map = {
+            row['file_answer']: {
+                'form_id': row['response__form__id'],
+                'form_title': row['response__form__title'],
+            }
+            for row in Answer.objects.filter(file_answer__in=page_file_paths).values(
+                'file_answer', 'response__form__id', 'response__form__title'
+            )
+        }
+        question_media_map = {
+            row['media_file']: {
+                'form_id': row['section__form__id'],
+                'form_title': row['section__form__title'],
+            }
+            for row in Question.objects.filter(media_file__in=page_file_paths).values(
+                'media_file', 'section__form__id', 'section__form__title'
+            )
+        }
+        qrcode_map = {
+            row['qr_code']: {
+                'form_id': row['id'],
+                'form_title': row['title'],
+            }
+            for row in Form.objects.filter(qr_code__in=page_file_paths).values('qr_code', 'id', 'title')
+        }
+        file_map = {**qrcode_map, **question_media_map, **answer_map}
 
         for entry in paginated_entries:
             rel = entry.relative_to(media_root).as_posix()
@@ -395,6 +388,7 @@ class UserViewSet(viewsets.ModelViewSet):
         linked_answers.update(file_answer=None)
 
         Question.objects.filter(media_file=relative_path).update(media_file='')
+        Form.objects.filter(qr_code=relative_path).update(qr_code='')
 
         file_path.unlink()
 
@@ -457,8 +451,9 @@ class FormViewSet(viewsets.ModelViewSet):
     other  → FormDetailSerializer
     """
     def get_queryset(self):
-        # Allow public submission and retrieval (for form filling)
-        if self.action in ['submit', 'retrieve', 'by_share_id']:
+        # Public form filling uses the unguessable share ID. Numeric-ID retrieval
+        # remains scoped to authenticated owners, collaborators, and admins.
+        if self.action in ['submit', 'by_share_id']:
             return Form.objects.all().prefetch_related(
                 'sections__questions__choices'
             )
@@ -485,7 +480,13 @@ class FormViewSet(viewsets.ModelViewSet):
                 _question_count=Count('sections__questions', distinct=True),
                 _response_count=Count('responses', distinct=True),
                 _is_archived=Exists(archive_subquery),
-            ).prefetch_related('permissions')
+            ).prefetch_related(
+                Prefetch(
+                    'permissions',
+                    queryset=FormPermission.objects.filter(user=user),
+                    to_attr='_user_permissions',
+                )
+            )
 
             # Filter by archived status if query param is provided
             archived_param = self.request.query_params.get('archived')
@@ -494,6 +495,9 @@ class FormViewSet(viewsets.ModelViewSet):
                     qs = qs.filter(_is_archived=True)
                 else:
                     qs = qs.filter(_is_archived=False)
+
+        if self.action in ['retrieve', 'update', 'partial_update']:
+            qs = qs.prefetch_related('sections__questions__choices')
 
         return qs
 
@@ -581,7 +585,7 @@ class FormViewSet(viewsets.ModelViewSet):
         FormArchive.objects.filter(user=request.user, form=form).delete()
         return DRFResponse({'detail': 'Form restored.'}, status=status.HTTP_200_OK)
 
-    @action(detail=True, methods=['post'])
+    @action(detail=True, methods=['post'], throttle_classes=[SubmissionRateThrottle])
     def submit(self, request, pk=None):
         # Public access allowed
         form = self.get_object()
@@ -592,6 +596,13 @@ class FormViewSet(viewsets.ModelViewSet):
                     'detail': f'This form closed on {timezone.localtime(form.deadline).strftime("%b %d, %Y at %I:%M %p")}.',
                 },
                 status=status.HTTP_403_FORBIDDEN,
+            )
+
+        total_upload_size = sum(upload.size for upload in request.FILES.values())
+        if total_upload_size > MAX_SUBMISSION_UPLOAD_SIZE:
+            return DRFResponse(
+                {'detail': 'Submission uploads may not exceed 25 MB in total.'},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         # Construct data for serializer manually to avoid QueryDict issues with nested data
@@ -643,7 +654,7 @@ class FormViewSet(viewsets.ModelViewSet):
              if 'answers' in request.data:
                  data['answers'] = request.data['answers']  
 
-        serializer = ResponseSerializer(data=data)
+        serializer = ResponseSerializer(data=data, context={'request': request, 'form': form})
         if serializer.is_valid():
             serializer.save()
             return DRFResponse(serializer.data, status=201)
@@ -654,11 +665,12 @@ class FormViewSet(viewsets.ModelViewSet):
         form = self.get_object()
         # Permission check handled in check_object_permissions
 
-        page_size = request.query_params.get('page_size', 25)
-        try:
-            page_size = min(int(page_size), 100)  # cap at 100
-        except (ValueError, TypeError):
-            page_size = 25
+        page_size = _get_positive_int_query_param(
+            request.query_params,
+            'page_size',
+            25,
+            100,
+        )
 
         responses = form.responses.prefetch_related(
             'answers__question', 'answers__selected_choices'
@@ -691,11 +703,13 @@ class FormViewSet(viewsets.ModelViewSet):
             output.truncate(0)
 
             # Rows
-            responses = form.responses.select_related().prefetch_related(
+            responses = form.responses.prefetch_related(
                 'answers__question', 'answers__selected_choices'
             ).order_by('-created_at')
 
-            for r in responses:
+            # A chunked iterator keeps prefetching bounded so this streaming
+            # response does not cache the full response history in memory.
+            for r in responses.iterator(chunk_size=200):
                 row = [r.id, r.created_at.strftime('%Y-%m-%d %H:%M:%S')]
                 answers_map = {a.question_id: a for a in r.answers.all()}
                 for q in questions:
@@ -726,7 +740,13 @@ class FormPermissionViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         # Only permissions for forms owned by current user
-        return FormPermission.objects.filter(form__owner=self.request.user)
+        queryset = FormPermission.objects.filter(
+            form__owner=self.request.user,
+        ).select_related('form', 'user')
+        form_id = self.request.query_params.get('form')
+        if form_id:
+            queryset = queryset.filter(form_id=form_id)
+        return queryset
 
     def perform_create(self, serializer):
         # Ensure form belongs to user

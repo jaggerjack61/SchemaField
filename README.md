@@ -7,7 +7,7 @@ A modern, schematic data capture platform for professionals. Transform chaos int
 ## Prerequisites
 
 - **Python** 3.8+
-- **Node.js** 18+ (required by Vite 5)
+- **Node.js** 20.19+ (required by the current Vite/Vitest toolchain)
 - **npm** or **yarn**
 
 ---
@@ -81,6 +81,11 @@ python manage.py runserver
 
 The backend API will be available at `http://127.0.0.1:8000`.
 
+For a production deployment, set `DJANGO_SECRET_KEY`, keep `DEBUG=False`, and
+configure `DJANGO_ALLOWED_HOSTS` and `CORS_ALLOWED_ORIGINS` as comma-separated
+lists. The included local start scripts and Docker Compose file set explicit
+development-only values.
+
 #### Frontend (React + Vite)
 
 ```bash
@@ -107,6 +112,7 @@ Run `start.bat` from the project root to automatically set up the venv, install 
 |---|---|
 | `GET /health` | Health check |
 | `POST /api/auth/login/` | Obtain JWT token |
+| `POST /api/auth/token/refresh/` | Refresh an expired JWT access token |
 | `GET /api/auth/me/` | Current user info |
 | `PATCH /api/auth/me/` | Update profile (name) |
 | `POST /api/auth/change-password/` | Change password |
@@ -174,7 +180,7 @@ Run `start.bat` from the project root to automatically set up the venv, install 
 | `/` | Landing page | Public |
 | `/login` | Login | Public |
 | `/f/:shareId` | Public form view | Public |
-| `/forms/:id/view` | Public form view (by form ID) | Public |
+| `/forms/:id/view` | Form view by internal ID | Authenticated |
 | `/dashboard` | Dashboard | Authenticated |
 | `/profile` | User profile | Authenticated |
 | `/forms/new` | Form builder | Authenticated |

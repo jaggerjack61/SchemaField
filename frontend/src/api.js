@@ -4,6 +4,61 @@ const api = axios.create({
   baseURL: '/api',
 })
 
+let refreshPromise = null
+
+function refreshAccessToken(refreshToken) {
+  if (!refreshPromise) {
+    refreshPromise = axios
+      .post('/api/auth/token/refresh/', { refresh: refreshToken })
+      .then(({ data }) => data.access)
+      .finally(() => {
+        refreshPromise = null
+      })
+  }
+  return refreshPromise
+}
+
+function apiPathFromNextUrl(nextUrl) {
+  const parsed = new URL(nextUrl, window.location.origin)
+  const path = parsed.pathname.startsWith('/api/')
+    ? parsed.pathname.slice('/api'.length)
+    : parsed.pathname
+  return `${path}${parsed.search}`
+}
+
+async function getAllPages(url, config = {}) {
+  const firstResponse = await api.get(url, {
+    ...config,
+    params: {
+      page_size: 100,
+      ...(config.params || {}),
+    },
+  })
+
+  if (!Array.isArray(firstResponse.data?.results)) {
+    return firstResponse
+  }
+
+  const results = [...firstResponse.data.results]
+  let next = firstResponse.data.next
+  while (next) {
+    const pageResponse = await api.get(apiPathFromNextUrl(next))
+    results.push(...pageResponse.data.results)
+    next = pageResponse.data.next
+  }
+
+  return {
+    ...firstResponse,
+    data: {
+      ...firstResponse.data,
+      count: results.length,
+      next: null,
+      previous: null,
+      results,
+    },
+  }
+}
+
 // Request interceptor for adding auth token
 api.interceptors.request.use(
   (config) => {
@@ -35,9 +90,9 @@ api.interceptors.response.use(
         if (refreshToken) {
           originalRequest._retry = true
           try {
-            const { data } = await axios.post('/api/auth/token/refresh/', { refresh: refreshToken })
-            localStorage.setItem('access_token', data.access)
-            originalRequest.headers.Authorization = 'Bearer ' + data.access
+            const accessToken = await refreshAccessToken(refreshToken)
+            localStorage.setItem('access_token', accessToken)
+            originalRequest.headers.Authorization = 'Bearer ' + accessToken
             return api(originalRequest)
           } catch (refreshError) {
             // Refresh failed — log out
@@ -66,7 +121,7 @@ export const updateProfile = (data) => api.patch('/auth/me/', data)
 export const changePassword = (currentPassword, newPassword) => api.post('/auth/change-password/', { current_password: currentPassword, new_password: newPassword })
 
 // Forms
-export const getForms = () => api.get('/forms/')
+export const getForms = () => getAllPages('/forms/')
 export const getForm = (id) => api.get('/forms/' + id + '/')
 export const getFormByShareId = (shareId) => api.get('/forms/by-share-id/' + shareId + '/')
 export const createForm = (data) => api.post('/forms/', data)
@@ -75,7 +130,7 @@ export const deleteForm = (id) => api.delete('/forms/' + id + '/')
 export const archiveForm = (id) => api.post('/forms/' + id + '/archive/')
 export const restoreForm = (id) => api.post('/forms/' + id + '/restore/')
 export const submitForm = (id, data) => api.post('/forms/' + id + '/submit/', data)
-export const getFormResponses = (id) => api.get('/forms/' + id + '/responses/')
+export const getFormResponses = (id) => getAllPages('/forms/' + id + '/responses/')
 export const exportFormResponses = (id) => api.get('/forms/' + id + '/export_csv/', { responseType: 'blob' })  // Expect binary data
 
 // Question media upload
@@ -86,7 +141,7 @@ export const uploadQuestionMedia = (file) => {
 }
 
 // Users (Admin)
-export const getUsers = (search = '') => api.get('/users/', { params: search ? { search } : {} })
+export const getUsers = (search = '') => getAllPages('/users/', { params: search ? { search } : {} })
 export const createUser = (data) => api.post('/users/', data)
 export const updateUser = (id, data) => api.patch(`/users/${id}/`, data)
 export const resetUserPassword = (id, password) => api.post('/users/' + id + '/reset_password/', { password })
@@ -97,7 +152,9 @@ export const getCleanupPreview = (view = false) => api.get('/users/file-manager/
 export const runOrphanedCleanup = () => api.post('/users/file-manager/cleanup-orphaned-files/')
 
 // Permissions
-export const getFormPermissions = () => api.get('/permissions/')
+export const getFormPermissions = (formId) => getAllPages('/permissions/', {
+  params: formId ? { form: formId } : {},
+})
 export const addFormPermission = (data) => api.post('/permissions/', data)
 export const removeFormPermission = (id) => api.delete('/permissions/' + id + '/')
 

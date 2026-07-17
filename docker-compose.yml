@@ -6,6 +6,9 @@ services:
       - "8000:8000"
     environment:
       SQLITE_PATH: /data/db.sqlite3
+      DEBUG: "True"
+      DJANGO_SECRET_KEY: schemafield-docker-dev-only
+      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,backend
     volumes:
       - ./backend:/app
       - backend_data:/data

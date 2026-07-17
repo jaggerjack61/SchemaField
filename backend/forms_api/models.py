@@ -59,6 +59,11 @@ class Form(models.Model):
 
     class Meta:
         ordering = ['-updated_at']
+        indexes = [
+            models.Index(fields=['share_id'], name='forms_api_form_share_id_idx'),
+            models.Index(fields=['owner'], name='forms_api_form_owner_idx'),
+            models.Index(fields=['updated_at'], name='forms_api_form_updated_idx'),
+        ]
 
     @property
     def is_closed(self):
@@ -95,6 +100,9 @@ class Section(models.Model):
 
     class Meta:
         ordering = ['order']
+        indexes = [
+            models.Index(fields=['form'], name='forms_api_section_form_idx'),
+        ]
 
     def __str__(self):
         return f'{self.form.title} — {self.title}'
@@ -122,6 +130,10 @@ class Question(models.Model):
 
     class Meta:
         ordering = ['order']
+        indexes = [
+            models.Index(fields=['question_type'], name='forms_api_question_qtype_idx'),
+            models.Index(fields=['section'], name='forms_api_question_section_idx'),
+        ]
 
     def __str__(self):
         return self.text
@@ -135,6 +147,9 @@ class Choice(models.Model):
 
     class Meta:
         ordering = ['order']
+        indexes = [
+            models.Index(fields=['question'], name='forms_api_choice_question_idx'),
+        ]
 
     def __str__(self):
         return self.text
@@ -147,6 +162,10 @@ class Response(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['created_at'], name='forms_api_response_created_idx'),
+            models.Index(fields=['form', 'created_at'], name='response_form_created_idx'),
+        ]
 
     def __str__(self):
         return f'Response to {self.form.title} at {self.created_at}'
@@ -155,7 +174,7 @@ class Response(models.Model):
 class Answer(models.Model):
     """A single answer to a question within a response."""
     response = models.ForeignKey(Response, related_name='answers', on_delete=models.CASCADE)
-    question = models.ForeignKey(Question, related_name='answers', on_delete=models.CASCADE)
+    question = models.ForeignKey(Question, related_name='answers', on_delete=models.RESTRICT)
     
     # Store text/number answers here
     text_answer = models.TextField(blank=True, null=True)
@@ -165,6 +184,12 @@ class Answer(models.Model):
     
     # Store choices for MC/MS here
     selected_choices = models.ManyToManyField(Choice, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['question'], name='forms_api_answer_question_idx'),
+            models.Index(fields=['response'], name='forms_api_answer_response_idx'),
+        ]
 
     def __str__(self):
         return f'Answer to {self.question.text}'
@@ -182,6 +207,11 @@ class FormPermission(models.Model):
 
     class Meta:
         unique_together = ('form', 'user', 'permission_type')
+        indexes = [
+            models.Index(fields=['permission_type'], name='forms_api_formperm_perm_idx'),
+            models.Index(fields=['user'], name='forms_api_formperm_user_idx'),
+            models.Index(fields=['form', 'user', 'permission_type'], name='formperm_form_user_perm_idx'),
+        ]
 
     def __str__(self):
         return f'{self.user.email} - {self.form.title} - {self.permission_type}'

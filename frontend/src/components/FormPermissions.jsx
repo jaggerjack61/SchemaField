@@ -16,7 +16,7 @@ export default function FormPermissions({ formId, onClose }) {
 
   async function loadData() {
     try {
-      const { data } = await getFormPermissions()
+      const { data } = await getFormPermissions(formId)
       // API returns paginated response: { results: [...] } or plain array
       const allPermissions = data.results || data
       // Filter permissions for THIS form
@@ -40,7 +40,7 @@ export default function FormPermissions({ formId, onClose }) {
         permission_type: permissionType
       })
       
-      loadData()
+      await loadData()
       setSelectedUser('')
     } catch (err) {
       setError(err.response?.data?.email?.[0] || 'Failed to share form. Check if user exists.')
@@ -52,7 +52,7 @@ export default function FormPermissions({ formId, onClose }) {
   function handleRemove(id) {
     if (window.confirm('Remove permission?')) {
       removeFormPermission(id).then(() => {
-        setPermissions(permissions.filter(p => p.id !== id))
+        setPermissions(current => current.filter(p => p.id !== id))
       })
     }
   }

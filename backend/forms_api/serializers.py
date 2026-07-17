@@ -1,5 +1,10 @@
+from decimal import Decimal, InvalidOperation
+
+from django.contrib.auth.password_validation import validate_password
+from django.db import transaction
 from rest_framework import serializers
 from .models import Form, Section, Question, Choice, Response, Answer, FormPermission, FormArchive
+from .upload_validation import media_upload_error
 
 
 class ChoiceSerializer(serializers.ModelSerializer):
@@ -12,7 +17,7 @@ class ChoiceSerializer(serializers.ModelSerializer):
 
 class QuestionSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(required=False)
-    choices = ChoiceSerializer(many=True, required=False, default=[])
+    choices = ChoiceSerializer(many=True, required=False)
     media_file = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     media_url = serializers.SerializerMethodField()
 
@@ -31,7 +36,7 @@ class QuestionSerializer(serializers.ModelSerializer):
 
 class SectionSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(required=False)
-    questions = QuestionSerializer(many=True, required=False, default=[])
+    questions = QuestionSerializer(many=True, required=False)
 
     class Meta:
         model = Section
@@ -50,7 +55,7 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class CreateUserSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True)
+    password = serializers.CharField(write_only=True, min_length=8, validators=[validate_password])
 
     class Meta:
         model = User
@@ -68,7 +73,7 @@ class LoginSerializer(TokenObtainPairSerializer):
 
 
 class ResetPasswordSerializer(serializers.Serializer):
-    password = serializers.CharField(write_only=True)
+    password = serializers.CharField(write_only=True, min_length=8, validators=[validate_password])
 
 
 class UpdateProfileSerializer(serializers.ModelSerializer):
@@ -79,7 +84,7 @@ class UpdateProfileSerializer(serializers.ModelSerializer):
 
 class ChangePasswordSerializer(serializers.Serializer):
     current_password = serializers.CharField(write_only=True)
-    new_password = serializers.CharField(write_only=True, min_length=8)
+    new_password = serializers.CharField(write_only=True, min_length=8, validators=[validate_password])
 
 
 class FormPermissionSerializer(serializers.ModelSerializer):
@@ -87,7 +92,7 @@ class FormPermissionSerializer(serializers.ModelSerializer):
     user_name = serializers.CharField(source='user.name', read_only=True)
     
     # Write-only field for creating permission by email
-    email = serializers.EmailField(write_only=True)
+    email = serializers.EmailField(write_only=True, required=False)
 
     class Meta:
         model = FormPermission
@@ -96,7 +101,9 @@ class FormPermissionSerializer(serializers.ModelSerializer):
         validators = []
 
     def create(self, validated_data):
-        email = validated_data.pop('email')
+        email = validated_data.pop('email', None)
+        if not email:
+            raise serializers.ValidationError({'email': 'This field is required.'})
         try:
             user = User.objects.get(email=email)
         except User.DoesNotExist:
@@ -146,19 +153,22 @@ class FormListSerializer(serializers.ModelSerializer):
     def get_is_owned(self, obj):
         request = self.context.get('request')
         if request and request.user.is_authenticated:
-            return obj.owner == request.user
+            return obj.owner_id == request.user.id
         return False
 
     def get_user_permissions(self, obj):
         request = self.context.get('request')
         if not request or not request.user.is_authenticated:
             return []
-        if obj.owner == request.user:
+        if obj.owner_id == request.user.id:
             return ['edit', 'view_responses'] # Owner has all
 
-        # Use prefetched permissions if available, avoiding N+1 query
+        if hasattr(obj, '_user_permissions'):
+            return [permission.permission_type for permission in obj._user_permissions]
+
+        # Use prefetched permissions if available, avoiding N+1 query.
         if hasattr(obj, '_prefetched_objects_cache') and 'permissions' in obj._prefetched_objects_cache:
-            return [p.permission_type for p in obj.permissions.all() if p.user == request.user]
+            return [p.permission_type for p in obj.permissions.all() if p.user_id == request.user.id]
 
         # Fallback to queryset lookup (shouldn't happen if queryset is properly prefetched)
         return list(FormPermission.objects.filter(form=obj, user=request.user).values_list('permission_type', flat=True))
@@ -175,7 +185,7 @@ class FormListSerializer(serializers.ModelSerializer):
 
 class FormDetailSerializer(serializers.ModelSerializer):
     """Full nested serializer for create / retrieve / update."""
-    sections = SectionSerializer(many=True, required=False, default=[])
+    sections = SectionSerializer(many=True, required=False)
 
     class Meta:
         model = Form
@@ -183,6 +193,7 @@ class FormDetailSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_at', 'updated_at', 'share_id', 'qr_code']
 
     # ------------------------------------------------------------------ create
+    @transaction.atomic
     def create(self, validated_data):
         sections_data = validated_data.pop('sections', [])
         form = Form.objects.create(**validated_data)
@@ -190,6 +201,7 @@ class FormDetailSerializer(serializers.ModelSerializer):
         return form
 
     # ------------------------------------------------------------------ update
+    @transaction.atomic
     def update(self, instance, validated_data):
         sections_data = validated_data.pop('sections', None)
         instance.title = validated_data.get('title', instance.title)
@@ -200,74 +212,155 @@ class FormDetailSerializer(serializers.ModelSerializer):
         if sections_data is None:
             return instance
 
-        # Diff-based update: keep existing sections/questions, create new, delete removed
+        # Load the nested graph once so large forms do not issue a query per node.
+        existing_sections = {
+            section.id: section
+            for section in instance.sections.prefetch_related('questions__choices').all()
+        }
         incoming_section_ids = {s.get('id') for s in sections_data if s.get('id')}
-        existing_sections = {s.id: s for s in instance.sections.all()}
+        if len(incoming_section_ids) != len([s for s in sections_data if s.get('id')]):
+            raise serializers.ValidationError({'sections': 'Duplicate section IDs are not allowed.'})
+        unknown_section_ids = incoming_section_ids - set(existing_sections)
+        if unknown_section_ids:
+            raise serializers.ValidationError({'sections': 'A section does not belong to this form.'})
 
-        # Delete sections that are no longer in the payload
-        for section_id in existing_sections:
-            if section_id not in incoming_section_ids:
-                existing_sections[section_id].delete()
+        removed_section_ids = set(existing_sections) - incoming_section_ids
+        if removed_section_ids:
+            removed_question_ids = list(
+                Question.objects.filter(section_id__in=removed_section_ids).values_list('id', flat=True)
+            )
+            self._ensure_questions_can_be_deleted(removed_question_ids)
+            self._ensure_choices_can_be_deleted(
+                Choice.objects.filter(question_id__in=removed_question_ids).values_list('id', flat=True)
+            )
+            Section.objects.filter(id__in=removed_section_ids).delete()
 
-        for s_data in sections_data:
-            questions_data = s_data.pop('questions', [])
+        sections_to_update = []
+        questions_to_update = []
+        choices_to_update = []
+
+        for raw_section_data in sections_data:
+            s_data = dict(raw_section_data)
+            questions_data = s_data.pop('questions', None)
             section_id = s_data.pop('id', None)
 
-            if section_id and section_id in existing_sections:
-                # Update existing section
+            if section_id:
                 section = existing_sections[section_id]
-                for attr, val in s_data.items():
+                for attr in ('title', 'description', 'order'):
+                    if attr not in s_data:
+                        continue
+                    val = s_data[attr]
                     setattr(section, attr, val)
-                section.save()
+                sections_to_update.append(section)
             else:
-                # Create new section
                 section = Section.objects.create(form=instance, **s_data)
 
-            # Handle questions within this section
+            if questions_data is None:
+                continue
+
+            existing_questions = {
+                question.id: question for question in section.questions.all()
+            } if section_id else {}
             incoming_q_ids = {q.get('id') for q in questions_data if q.get('id')}
-            existing_questions = {q.id: q for q in section.questions.all()}
+            if len(incoming_q_ids) != len([q for q in questions_data if q.get('id')]):
+                raise serializers.ValidationError({'sections': 'Duplicate question IDs are not allowed.'})
+            unknown_question_ids = incoming_q_ids - set(existing_questions)
+            if unknown_question_ids:
+                raise serializers.ValidationError({'sections': 'A question does not belong to this section.'})
 
-            # Delete questions no longer present
-            for q_id in existing_questions:
-                if q_id not in incoming_q_ids:
-                    existing_questions[q_id].delete()
+            removed_question_ids = set(existing_questions) - incoming_q_ids
+            if removed_question_ids:
+                self._ensure_questions_can_be_deleted(removed_question_ids)
+                self._ensure_choices_can_be_deleted(
+                    Choice.objects.filter(question_id__in=removed_question_ids).values_list('id', flat=True)
+                )
+                Question.objects.filter(id__in=removed_question_ids).delete()
 
-            for q_data in questions_data:
-                choices_data = q_data.pop('choices', [])
+            for raw_question_data in questions_data:
+                q_data = dict(raw_question_data)
+                choices_data = q_data.pop('choices', None)
                 q_id = q_data.pop('id', None)
-                media_file = q_data.pop('media_file', None) or ''
+                media_file = q_data.pop('media_file', serializers.empty)
                 q_data.pop('media_url', None)
 
-                if q_id and q_id in existing_questions:
-                    # Update existing question
+                if q_id:
                     question = existing_questions[q_id]
-                    question.media_file = media_file
-                    for attr, val in q_data.items():
-                        setattr(question, attr, val)
-                    question.save()
+                    if media_file is not serializers.empty:
+                        question.media_file = media_file or ''
+                    for attr in ('text', 'question_type', 'required', 'order'):
+                        if attr in q_data:
+                            setattr(question, attr, q_data[attr])
+                    questions_to_update.append(question)
                 else:
-                    # Create new question
-                    question = Question.objects.create(section=section, media_file=media_file, **q_data)
+                    question = Question.objects.create(
+                        section=section,
+                        media_file='' if media_file is serializers.empty else (media_file or ''),
+                        **q_data,
+                    )
 
-                # Handle choices
+                if choices_data is None:
+                    continue
+
+                existing_choices = {
+                    choice.id: choice for choice in question.choices.all()
+                } if q_id else {}
                 incoming_c_ids = {c.get('id') for c in choices_data if c.get('id')}
-                existing_choices = {c.id: c for c in question.choices.all()}
+                if len(incoming_c_ids) != len([c for c in choices_data if c.get('id')]):
+                    raise serializers.ValidationError({'sections': 'Duplicate choice IDs are not allowed.'})
+                unknown_choice_ids = incoming_c_ids - set(existing_choices)
+                if unknown_choice_ids:
+                    raise serializers.ValidationError({'sections': 'A choice does not belong to this question.'})
 
-                for c_id in existing_choices:
-                    if c_id not in incoming_c_ids:
-                        existing_choices[c_id].delete()
+                removed_choice_ids = set(existing_choices) - incoming_c_ids
+                if removed_choice_ids:
+                    self._ensure_choices_can_be_deleted(removed_choice_ids)
+                    Choice.objects.filter(id__in=removed_choice_ids).delete()
 
-                for c_data in choices_data:
+                new_choices = []
+                for raw_choice_data in choices_data:
+                    c_data = dict(raw_choice_data)
                     c_id = c_data.pop('id', None)
-                    if c_id and c_id in existing_choices:
+                    if c_id:
                         choice = existing_choices[c_id]
-                        for attr, val in c_data.items():
-                            setattr(choice, attr, val)
-                        choice.save()
+                        for attr in ('text', 'order'):
+                            if attr in c_data:
+                                setattr(choice, attr, c_data[attr])
+                        choices_to_update.append(choice)
                     else:
-                        Choice.objects.create(question=question, **c_data)
+                        new_choices.append(Choice(question=question, **c_data))
+
+                if new_choices:
+                    Choice.objects.bulk_create(new_choices)
+
+        if sections_to_update:
+            Section.objects.bulk_update(sections_to_update, ['title', 'description', 'order'])
+        if questions_to_update:
+            Question.objects.bulk_update(
+                questions_to_update,
+                ['text', 'question_type', 'required', 'order', 'media_file'],
+            )
+        if choices_to_update:
+            Choice.objects.bulk_update(choices_to_update, ['text', 'order'])
+
+        instance._prefetched_objects_cache = {}
 
         return instance
+
+    @staticmethod
+    def _ensure_questions_can_be_deleted(question_ids):
+        question_ids = list(question_ids)
+        if question_ids and Answer.objects.filter(question_id__in=question_ids).exists():
+            raise serializers.ValidationError({
+                'sections': 'Questions with historical answers cannot be deleted.',
+            })
+
+    @staticmethod
+    def _ensure_choices_can_be_deleted(choice_ids):
+        choice_ids = list(choice_ids)
+        if choice_ids and Answer.objects.filter(selected_choices__id__in=choice_ids).exists():
+            raise serializers.ValidationError({
+                'sections': 'Choices used by historical answers cannot be deleted.',
+            })
 
     # ---------------------------------------------------------------- helpers
     @staticmethod
@@ -314,6 +407,11 @@ class AnswerSerializer(serializers.ModelSerializer):
     def validate(self, data):
         question = data.get('question')
         text_answer = data.get('text_answer')
+        file_answer = data.get('file_answer')
+
+        upload_error = media_upload_error(file_answer)
+        if upload_error:
+            raise serializers.ValidationError({'file_answer': upload_error})
 
         if question and text_answer is not None and text_answer != '':
             # Normalise whitespace for all text answers first
@@ -321,23 +419,20 @@ class AnswerSerializer(serializers.ModelSerializer):
 
             if question.question_type == 'number':
                 try:
-                    float_val = float(text_answer)
-                    if float_val != int(float_val):
-                        raise serializers.ValidationError(
-                            {'text_answer': 'A whole number is required for this question.'}
-                        )
-                    # Normalise: remove leading zeros, store canonical int string
-                    text_answer = str(int(float_val))
+                    text_answer = str(int(text_answer, 10))
                 except (ValueError, TypeError):
                     raise serializers.ValidationError(
                         {'text_answer': 'A valid integer is required for this question.'}
                     )
             elif question.question_type == 'float':
                 try:
-                    float_val = float(text_answer)
-                    # Normalise: remove leading/trailing zeros artefacts
-                    text_answer = str(float_val)
-                except (ValueError, TypeError):
+                    decimal_value = Decimal(text_answer)
+                    if not decimal_value.is_finite():
+                        raise InvalidOperation
+                    text_answer = str(decimal_value.normalize())
+                    if decimal_value == 0:
+                        text_answer = '0'
+                except (InvalidOperation, ValueError, TypeError):
                     raise serializers.ValidationError(
                         {'text_answer': 'A valid number is required for this question.'}
                     )
@@ -354,6 +449,84 @@ class ResponseSerializer(serializers.ModelSerializer):
         model = Response
         fields = ['id', 'form', 'created_at', 'answers']
 
+    def validate(self, data):
+        form = data.get('form')
+        target_form = self.context.get('form') or form
+        if form is None or target_form is None or form.id != target_form.id:
+            raise serializers.ValidationError({'form': 'Invalid submission target.'})
+        answers = data.get('answers', [])
+        questions = {
+            question.id: question
+            for section in target_form.sections.all()
+            for question in section.questions.all()
+        }
+        seen_question_ids = set()
+
+        for answer in answers:
+            question = answer['question']
+            if question.id not in questions:
+                raise serializers.ValidationError({
+                    'answers': 'Every answer must reference a question on this form.',
+                })
+            if question.id in seen_question_ids:
+                raise serializers.ValidationError({
+                    'answers': 'Each question can only be answered once.',
+                })
+            seen_question_ids.add(question.id)
+
+            selected_choices = list(answer.get('selected_choices', []))
+            text_answer = (answer.get('text_answer') or '').strip()
+            file_answer = answer.get('file_answer')
+
+            if question.question_type in ('multiple_choice', 'multiple_select'):
+                if text_answer or file_answer:
+                    raise serializers.ValidationError({
+                        'answers': f'Question {question.id} only accepts choices.',
+                    })
+                if question.question_type == 'multiple_choice' and len(selected_choices) > 1:
+                    raise serializers.ValidationError({
+                        'answers': f'Question {question.id} accepts only one choice.',
+                    })
+                if any(choice.question_id != question.id for choice in selected_choices):
+                    raise serializers.ValidationError({
+                        'answers': f'A selected choice does not belong to question {question.id}.',
+                    })
+            elif question.question_type == 'media':
+                if text_answer or selected_choices:
+                    raise serializers.ValidationError({
+                        'answers': f'Question {question.id} only accepts a media file.',
+                    })
+            elif file_answer or selected_choices:
+                raise serializers.ValidationError({
+                    'answers': f'Question {question.id} only accepts a text or numeric answer.',
+                })
+
+        missing_required = []
+        answers_by_question = {answer['question'].id: answer for answer in answers}
+        for question in questions.values():
+            if not question.required:
+                continue
+            answer = answers_by_question.get(question.id)
+            if answer is None:
+                missing_required.append(question.id)
+                continue
+            if question.question_type in ('multiple_choice', 'multiple_select'):
+                has_value = bool(answer.get('selected_choices'))
+            elif question.question_type == 'media':
+                has_value = bool(answer.get('file_answer'))
+            else:
+                has_value = bool((answer.get('text_answer') or '').strip())
+            if not has_value:
+                missing_required.append(question.id)
+
+        if missing_required:
+            raise serializers.ValidationError({
+                'answers': f'Required questions are missing answers: {missing_required}.',
+            })
+
+        return data
+
+    @transaction.atomic
     def create(self, validated_data):
         answers_data = validated_data.pop('answers', [])
         response = Response.objects.create(**validated_data)

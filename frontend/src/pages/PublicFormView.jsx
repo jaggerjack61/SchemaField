@@ -53,14 +53,10 @@ function normalizeAnswer(question, value) {
     return value.trim()
   }
   if (question.question_type === 'number') {
-    if (value.trim() === '' || value.trim() === '-') return value
-    const n = parseInt(value, 10)
-    return isNaN(n) ? value : String(n)
+    return value.trim()
   }
   if (question.question_type === 'float') {
-    if (value.trim() === '' || value.trim() === '-') return value
-    const n = parseFloat(value)
-    return isNaN(n) ? value : String(n)
+    return value.trim()
   }
   return value
 }

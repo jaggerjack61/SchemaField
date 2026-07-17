@@ -6,6 +6,8 @@ set "BACKEND=%ROOT%backend"
 set "FRONTEND=%ROOT%frontend"
 set "VENV_DIR=%BACKEND%\.venv"
 set "VENV_ACTIVATE=%VENV_DIR%\Scripts\activate.bat"
+set "DEBUG=True"
+set "DJANGO_SECRET_KEY=schemafield-local-dev-only"
 
 if not exist "%VENV_ACTIVATE%" (
     echo Creating backend venv ...

@@ -30,7 +30,6 @@ function App() {
             <Route path="/" element={<LandingPage />} />
             <Route path="/login" element={<Login />} />
             <Route path="/f/:shareId" element={<PublicFormView />} />
-            <Route path="/forms/:id/view" element={<PublicFormView />} />
 
             {/* Protected Routes */}
             <Route element={<ProtectedRoute />}>
@@ -39,6 +38,7 @@ function App() {
               <Route path="/forms/new" element={<FormBuilder />} />
               <Route path="/forms/:id/edit" element={<FormBuilder />} />
               <Route path="/forms/:id/preview" element={<FormPreview />} />
+              <Route path="/forms/:id/view" element={<PublicFormView />} />
               <Route path="/forms/:id/responses" element={<FormResponses />} />
               <Route path="/forms/:id/responses/spreadsheet" element={<FormSpreadsheet />} />
               <Route path="/forms/:id/responses/analytics" element={<FormAnalytics />} />

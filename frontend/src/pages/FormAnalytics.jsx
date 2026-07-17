@@ -62,17 +62,24 @@ export default function FormAnalytics() {
     [filters, questionById]
   )
 
-  const filteredResponses = useMemo(() => {
-    if (!activeFilters.length) return responses
+  const indexedResponses = useMemo(() => responses.map(response => ({
+    ...response,
+    answersByQuestion: Object.fromEntries(
+      response.answers.map(answer => [String(answer.question), answer])
+    ),
+  })), [responses])
 
-    return responses.filter(response =>
+  const filteredResponses = useMemo(() => {
+    if (!activeFilters.length) return indexedResponses
+
+    return indexedResponses.filter(response =>
       activeFilters.every(filter => {
         const question = questionById[String(filter.questionId)]
         if (!question) return true
         return matchesResponseFilter(response, question, filter)
       })
     )
-  }, [responses, questionById, activeFilters])
+  }, [indexedResponses, questionById, activeFilters])
 
   const trendSeries = useMemo(
     () => buildTrendSeries(filteredResponses, trendMode),
@@ -410,7 +417,7 @@ function isFilterActive(filter, question) {
 }
 
 function matchesResponseFilter(response, question, filter) {
-  const answer = response.answers.find(item => String(item.question) === String(question.id))
+  const answer = response.answersByQuestion[String(question.id)]
 
   if (question.question_type === 'multiple_choice' || question.question_type === 'multiple_select') {
     if (!filter.choiceId) return true
@@ -487,9 +494,9 @@ function TrendChart({ series }) {
 }
 
 function QuestionAnalytics({ question, responses }) {
-  const answers = responses.flatMap(response =>
-    response.answers.filter(answer => answer.question === question.id)
-  )
+  const answers = responses
+    .map(response => response.answersByQuestion[String(question.id)])
+    .filter(Boolean)
 
   return (
     <div className="summary-card">
@@ -684,7 +691,7 @@ function buildAnalyticsCsv(responses, questionEntries, includeSectionTitle) {
     const cells = [new Date(response.created_at).toLocaleString()]
 
     questionEntries.forEach(({ question }) => {
-      const answer = response.answers.find(item => String(item.question) === String(question.id))
+      const answer = response.answersByQuestion[String(question.id)]
       cells.push(formatCsvAnswer(answer, question))
     })
 

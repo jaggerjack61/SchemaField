@@ -2,12 +2,62 @@ from django.test import TestCase
 from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
+from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 from datetime import timedelta
 from pathlib import Path
 import tempfile
 
-from .models import Choice, Form, FormArchive, FormPermission, Question, Section, User
+from .models import Answer, Choice, Form, FormArchive, FormPermission, Question, Response, Section, User
+
+
+_test_media_dir = None
+_test_media_override = None
+
+
+def setUpModule():
+    """Keep files created by tests out of the project's persistent media directory."""
+    global _test_media_dir, _test_media_override
+    _test_media_dir = tempfile.TemporaryDirectory(prefix='schemafield-test-media-')
+    _test_media_override = override_settings(MEDIA_ROOT=Path(_test_media_dir.name))
+    _test_media_override.enable()
+
+
+def tearDownModule():
+    try:
+        if _test_media_override is not None:
+            _test_media_override.disable()
+    finally:
+        if _test_media_dir is not None:
+            _test_media_dir.cleanup()
+
+
+class AuthenticationTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            email='auth-user@example.com',
+            password='correct-horse-battery-staple',
+            name='Auth User',
+        )
+
+    def test_login_refresh_token_flow_is_registered(self):
+        login_response = self.client.post(reverse('login'), {
+            'email': self.user.email,
+            'password': 'correct-horse-battery-staple',
+        })
+
+        self.assertEqual(login_response.status_code, 200)
+        refresh_response = self.client.post(reverse('token-refresh'), {
+            'refresh': login_response.data['refresh'],
+        })
+        self.assertEqual(refresh_response.status_code, 200)
+        self.assertIn('access', refresh_response.data)
+
+    def test_form_list_uses_authenticated_access_by_default(self):
+        response = self.client.get(reverse('form-list'))
+
+        self.assertEqual(response.status_code, 401)
 
 
 class UserSearchTests(TestCase):
@@ -169,6 +219,228 @@ class FormAccessTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data['sections']), 2)
 
+    def test_responses_rejects_zero_page_size(self):
+        self.client.force_authenticate(user=self.owner)
+
+        response = self.client.get(
+            reverse('form-responses', args=[self.form.id]),
+            {'page_size': 0},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['results'], [])
+
+
+class SubmissionValidationTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.owner = User.objects.create_user(
+            email='submission-owner@example.com',
+            password='password123',
+            name='Submission Owner',
+        )
+        self.form = Form.objects.create(title='Submission Form', owner=self.owner)
+        self.section = Section.objects.create(form=self.form, title='Submission Section')
+        self.required_question = Question.objects.create(
+            section=self.section,
+            text='Required answer',
+            question_type='short_text',
+            required=True,
+        )
+        self.integer_question = Question.objects.create(
+            section=self.section,
+            text='Large integer',
+            question_type='number',
+        )
+        self.float_question = Question.objects.create(
+            section=self.section,
+            text='Finite number',
+            question_type='float',
+        )
+        self.media_question = Question.objects.create(
+            section=self.section,
+            text='Media',
+            question_type='media',
+        )
+
+        self.other_form = Form.objects.create(title='Other Form', owner=self.owner)
+        self.other_section = Section.objects.create(form=self.other_form, title='Other Section')
+        self.other_question = Question.objects.create(
+            section=self.other_section,
+            text='Other question',
+            question_type='multiple_choice',
+        )
+        self.other_choice = Choice.objects.create(question=self.other_question, text='Other choice')
+
+    def submit(self, answers):
+        return self.client.post(
+            reverse('form-submit', args=[self.form.id]),
+            {'answers': answers},
+            format='json',
+        )
+
+    def test_submit_rejects_missing_required_answers(self):
+        response = self.submit([])
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('answers', response.data)
+        self.assertFalse(Response.objects.filter(form=self.form).exists())
+
+    def test_submit_rejects_question_from_another_form(self):
+        response = self.submit([
+            {'question_id': self.required_question.id, 'text_answer': 'Present'},
+            {'question_id': self.other_question.id, 'selected_choices': [self.other_choice.id]},
+        ])
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Response.objects.filter(form=self.form).exists())
+
+    def test_submit_rejects_choice_from_another_question(self):
+        response = self.submit([
+            {
+                'question_id': self.required_question.id,
+                'text_answer': 'Present',
+                'selected_choices': [self.other_choice.id],
+            },
+        ])
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Response.objects.filter(form=self.form).exists())
+
+    def test_submit_rejects_duplicate_question_answers(self):
+        response = self.submit([
+            {'question_id': self.required_question.id, 'text_answer': 'First'},
+            {'question_id': self.required_question.id, 'text_answer': 'Second'},
+        ])
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Response.objects.filter(form=self.form).exists())
+
+    def test_large_integer_is_preserved_exactly(self):
+        value = '9007199254740993'
+
+        response = self.submit([
+            {'question_id': self.required_question.id, 'text_answer': 'Present'},
+            {'question_id': self.integer_question.id, 'text_answer': value},
+        ])
+
+        self.assertEqual(response.status_code, 201)
+        answer = Answer.objects.get(response__form=self.form, question=self.integer_question)
+        self.assertEqual(answer.text_answer, value)
+
+    def test_submit_rejects_non_finite_float(self):
+        response = self.submit([
+            {'question_id': self.required_question.id, 'text_answer': 'Present'},
+            {'question_id': self.float_question.id, 'text_answer': 'Infinity'},
+        ])
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Response.objects.filter(form=self.form).exists())
+
+    def test_submit_rejects_unsupported_media_type(self):
+        upload = SimpleUploadedFile('payload.exe', b'not media', content_type='application/octet-stream')
+
+        response = self.client.post(
+            reverse('form-submit', args=[self.form.id]),
+            {
+                'answers[0][question_id]': str(self.required_question.id),
+                'answers[0][text_answer]': 'Present',
+                'answers[1][question_id]': str(self.media_question.id),
+                'answers[1][file_answer]': upload,
+            },
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Response.objects.filter(form=self.form).exists())
+
+
+class SchemaHistoryTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.owner = User.objects.create_user(
+            email='history-owner@example.com',
+            password='password123',
+            name='History Owner',
+        )
+        self.form = Form.objects.create(title='History Form', owner=self.owner)
+        self.section = Section.objects.create(form=self.form, title='History Section')
+        self.question = Question.objects.create(
+            section=self.section,
+            text='Historical question',
+            question_type='short_text',
+        )
+        self.response = Response.objects.create(form=self.form)
+        self.answer = Answer.objects.create(
+            response=self.response,
+            question=self.question,
+            text_answer='Keep me',
+        )
+        self.client.force_authenticate(user=self.owner)
+
+    def test_update_rejects_deleting_question_with_historical_answers(self):
+        response = self.client.put(
+            reverse('form-detail', args=[self.form.id]),
+            {
+                'title': self.form.title,
+                'description': '',
+                'deadline': None,
+                'sections': [{
+                    'id': self.section.id,
+                    'title': self.section.title,
+                    'description': '',
+                    'order': 0,
+                    'questions': [],
+                }],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(Question.objects.filter(id=self.question.id).exists())
+        self.assertTrue(Answer.objects.filter(id=self.answer.id).exists())
+
+    def test_update_can_delete_unanswered_question(self):
+        unused = Question.objects.create(
+            section=self.section,
+            text='Unused question',
+            question_type='short_text',
+        )
+
+        response = self.client.put(
+            reverse('form-detail', args=[self.form.id]),
+            {
+                'title': self.form.title,
+                'description': '',
+                'deadline': None,
+                'sections': [{
+                    'id': self.section.id,
+                    'title': self.section.title,
+                    'description': '',
+                    'order': 0,
+                    'questions': [{
+                        'id': self.question.id,
+                        'text': self.question.text,
+                        'question_type': self.question.question_type,
+                        'required': False,
+                        'order': 0,
+                    }],
+                }],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Question.objects.filter(id=unused.id).exists())
+        self.assertTrue(Answer.objects.filter(id=self.answer.id).exists())
+
+    def test_deleting_entire_form_still_deletes_its_response_graph(self):
+        response = self.client.delete(reverse('form-detail', args=[self.form.id]))
+
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(Form.objects.filter(id=self.form.id).exists())
+        self.assertFalse(Response.objects.filter(id=self.response.id).exists())
+
 
 class FormPermissionTests(TestCase):
     def setUp(self):
@@ -271,6 +543,34 @@ class FileManagerTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['page'], 1)
         self.assertEqual(response.data['page_size'], 50)
+
+    def test_cleanup_preview_includes_orphaned_question_media(self):
+        orphan = self.media_root / 'question_media' / '2026' / '01' / '01' / 'orphan.png'
+        orphan.parent.mkdir(parents=True)
+        orphan.write_bytes(b'orphan')
+
+        response = self.client.get(
+            reverse('user-file-manager-cleanup-preview'),
+            {'view': 'true'},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['delete_count'], 1)
+        self.assertEqual(response.data['files'][0]['path'], 'question_media/2026/01/01/orphan.png')
+
+    def test_deleting_qr_code_clears_database_reference(self):
+        form = Form.objects.create(title='QR Form', owner=self.admin)
+        qr_name = form.qr_code.name
+        self.assertTrue((self.media_root / qr_name).exists())
+
+        response = self.client.delete(
+            f"{reverse('user-file-manager-delete-file')}?path={qr_name}",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        form.refresh_from_db()
+        self.assertFalse(form.qr_code.name)
+        self.assertFalse((self.media_root / qr_name).exists())
 
 
 class HealthRouteTests(TestCase):

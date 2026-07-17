@@ -8,6 +8,9 @@ $Frontend = Join-Path $Root "frontend"
 $VenvDir = Join-Path $Backend "venv"
 $VenvActivate = Join-Path $VenvDir "Scripts\Activate.ps1"
 
+$env:DEBUG = "True"
+$env:DJANGO_SECRET_KEY = "schemafield-local-dev-only"
+
 if (-not (Test-Path $VenvActivate)) {
     Write-Host "Creating backend venv ..." -ForegroundColor Yellow
     python -m venv $VenvDir
