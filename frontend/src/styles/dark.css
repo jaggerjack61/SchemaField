@@ -1,0 +1,151 @@
+/* ============================================================
+   Dark Theme Overrides
+   Fixes styles that use hardcoded light-theme colors.
+   ============================================================ */
+[data-theme="dark"] {
+  /* ---- Landing page ---- */
+  .landing-page.abstract-theme {
+    color: var(--text-primary);
+  }
+
+  .grid-bg {
+    background-image:
+      linear-gradient(to right, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  }
+
+  .badge-pill {
+    border-color: var(--border);
+    color: var(--text-secondary);
+  }
+
+  .title-abstract {
+    color: var(--text-primary);
+  }
+
+  .hero-sub.abstract {
+    color: var(--text-secondary);
+  }
+
+  .manifesto-grid {
+    background: var(--border);
+    background-color: var(--border);
+    border-color: var(--border);
+  }
+
+  .card-number {
+    color: var(--text-muted);
+  }
+
+  .manifesto-card h3 {
+    color: var(--text-primary);
+  }
+
+  .manifesto-card p {
+    color: var(--text-secondary);
+  }
+
+  .interface-mockup {
+    border-color: var(--border);
+  }
+
+  .mockup-header {
+    border-bottom-color: var(--border);
+    background: var(--bg-card);
+  }
+
+  .line {
+    background: var(--bg-card-hover);
+  }
+
+  .input-field-mock {
+    border-color: var(--border);
+  }
+
+  .button-mock {
+    background: var(--accent);
+  }
+
+  .landing-footer.abstract {
+    border-top-color: var(--border);
+  }
+
+  .footer-content .links {
+    color: var(--text-secondary);
+  }
+
+  .footer-content .links a {
+    color: var(--text-secondary);
+  }
+
+  .footer-content .links a:hover {
+    color: var(--text-primary);
+  }
+
+  /* ---- Login page ---- */
+  .brand-link {
+    color: var(--text-primary);
+  }
+
+  .logo-icon-small {
+    background: var(--accent);
+    color: var(--text-inverse);
+  }
+
+  .card-header h2 {
+    color: var(--text-primary);
+  }
+
+  .card-header p {
+    color: var(--text-secondary);
+  }
+
+  .form-group label {
+    color: var(--text-secondary);
+  }
+
+  .input-abstract {
+    color: var(--text-primary);
+  }
+
+  .input-abstract:focus {
+    border-color: var(--border-focus);
+    box-shadow: 0 0 0 1px var(--border-focus);
+  }
+
+  .card-footer {
+    color: var(--text-secondary);
+  }
+
+  .card-footer a {
+    color: var(--text-primary);
+  }
+
+  .error-message-abstract {
+    background: var(--danger-subtle);
+    border-color: rgba(255, 77, 79, 0.35);
+    color: var(--danger);
+  }
+
+  .error-icon {
+    background: var(--danger);
+  }
+
+  .back-to-home-link {
+    color: var(--text-secondary);
+  }
+
+  .back-to-home-link:hover {
+    color: var(--text-primary);
+  }
+
+  /* ---- Spreadsheet ---- */
+  .spreadsheet-table tbody tr:nth-child(even) td {
+    background: var(--bg-input);
+  }
+
+  /* ---- Builder ---- */
+  .section-header .section-number {
+    color: var(--text-inverse);
+  }
+}

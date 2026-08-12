@@ -4,3 +4,4 @@
 .playwright-mcp/
 plan.md
 tmp/
+*.log

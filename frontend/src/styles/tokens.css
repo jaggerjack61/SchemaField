@@ -49,8 +49,42 @@
   --transition: 0.15s ease;
 }
 
-/* Dark Mode Support (optional, Vercel supports both but default is light/dark toggle) 
-   For now, we stick to a light, clean theme as per "minimalistic" request, 
-   but let's add a media query for system dark mode if we want to be fancy later.
-   For this specific request, the user likely wants the "Vercel Light" clean look.
-*/
+/* ---------- CSS Variables (Dark Theme) ---------- */
+[data-theme="dark"] {
+  --bg-primary: #0a0a0a;
+  --bg-secondary: #101010;
+  --bg-card: #141414;
+  --bg-card-hover: #1c1c1c;
+  --bg-input: #1c1c1c;
+  --bg-glass: rgba(10, 10, 10, 0.82);
+
+  --text-primary: #f5f5f4;
+  --text-secondary: #a1a1a1;
+  --text-muted: #6e6e6e;
+  --text-inverse: #0a0a0a;
+
+  --accent: #f5f5f4;
+  --accent-hover: #d4d4d4;
+  --accent-subtle: #1f1f1f;
+  --accent-glow: rgba(255, 255, 255, 0.1);
+
+  --danger: #ff4d4f;
+  --danger-hover: #ff6b6b;
+  --danger-subtle: rgba(255, 77, 79, 0.12);
+
+  --success: #3291ff;
+  --warning: #f5a623;
+
+  --border: #2b2b2b;
+  --border-focus: #f5f5f4;
+
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 5px 10px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 12px 24px rgba(0, 0, 0, 0.55);
+  --shadow-glow: 0 0 20px rgba(255, 255, 255, 0.06);
+}
+
+/* Smooth theme transition */
+body {
+  transition: background-color 0.25s ease, color 0.25s ease;
+}

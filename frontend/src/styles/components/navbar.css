@@ -73,6 +73,28 @@
   background: var(--accent-hover);
 }
 
+/* Theme toggle */
+.navbar-links .theme-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.navbar-links .theme-toggle:hover {
+  background: var(--accent-subtle);
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
 /* Dropdown */
 .navbar-dropdown {
   position: relative;
