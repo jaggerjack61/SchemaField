@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
+import ImagePreviewModal, { isImageUrl } from '../components/ImagePreviewModal'
 import {
   getFileManagerSummary,
   getFileManagerBrowser,
@@ -23,6 +24,7 @@ export default function AdminFileManagement() {
   const [cleanupLoading, setCleanupLoading] = useState(true)
   const [cleanupRunning, setCleanupRunning] = useState(false)
   const [showCleanupFiles, setShowCleanupFiles] = useState(false)
+  const [previewUrl, setPreviewUrl] = useState(null)
   const [toast, setToast] = useState(null)
 
   useEffect(() => {
@@ -112,6 +114,15 @@ export default function AdminFileManagement() {
     } finally {
       setCleanupRunning(false)
     }
+  }
+
+  function openPreview(url) {
+    if (!url) return
+    setPreviewUrl(url)
+  }
+
+  function closePreview() {
+    setPreviewUrl(null)
   }
 
   function showToast(message, type) {
@@ -281,7 +292,11 @@ export default function AdminFileManagement() {
                   <td>{formatBytes(file.size_bytes)}</td>
                   <td>{formatDate(file.modified_at)}</td>
                   <td>
-                    <a href={file.url} target="_blank" rel="noreferrer" className="btn btn-secondary">Open</a>
+                    {isImageUrl(file.url) ? (
+                      <button className="btn btn-secondary" onClick={() => openPreview(file.url)}>View</button>
+                    ) : (
+                      <a href={file.url} target="_blank" rel="noreferrer" className="btn btn-secondary">Open</a>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -361,7 +376,11 @@ export default function AdminFileManagement() {
                 <td>{formatDate(file.modified_at)}</td>
                 <td>
                   <div className="admin-file-actions">
-                    <a href={file.url} target="_blank" rel="noreferrer" className="btn btn-secondary">Open</a>
+                    {isImageUrl(file.url) ? (
+                      <button className="btn btn-secondary" onClick={() => openPreview(file.url)}>View</button>
+                    ) : (
+                      <a href={file.url} target="_blank" rel="noreferrer" className="btn btn-secondary">Open</a>
+                    )}
                     <button
                       className="btn btn-danger"
                       onClick={() => handleDeleteFile(file.path)}
@@ -376,6 +395,8 @@ export default function AdminFileManagement() {
           </tbody>
         </table>
       </div>
+
+      <ImagePreviewModal url={previewUrl} isOpen={Boolean(previewUrl)} onClose={closePreview} />
 
       {toast && <div className={`toast ${toast.type}`}>{toast.message}</div>}
     </div>

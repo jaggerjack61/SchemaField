@@ -85,6 +85,79 @@
 }
 
 /* ============================================================
+   Image Preview Modal
+   ============================================================ */
+.image-preview-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 24px;
+  animation: fadeIn 0.15s ease;
+}
+
+.image-preview-box {
+  position: relative;
+  max-width: 90vw;
+  max-height: 90vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.image-preview-stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 90vw;
+  max-height: 90vh;
+}
+
+.image-preview-img {
+  max-width: 90vw;
+  max-height: 90vh;
+  object-fit: contain;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.image-preview-close {
+  position: absolute;
+  top: -14px;
+  right: -14px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-lg);
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.image-preview-close:hover {
+  background: var(--hover);
+  transform: scale(1.05);
+}
+
+/* Spinner is centered within .image-preview-stage via parent flexbox. */
+.image-preview-stage .spinner {
+  position: absolute;
+}
+
+/* ============================================================
    Error Boundary
    ============================================================ */
 .error-boundary {

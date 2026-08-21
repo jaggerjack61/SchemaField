@@ -1,6 +1,7 @@
 .env
 .env.*
 *.sqlite3
+.DS_Store
 .playwright-mcp/
 plan.md
 tmp/
