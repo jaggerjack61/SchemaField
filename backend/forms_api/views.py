@@ -564,7 +564,15 @@ class FormViewSet(viewsets.ModelViewSet):
             if obj.owner != request.user:
                 self.permission_denied(request, message="Only the owner can delete this form.")
 
-    @action(detail=False, methods=['get'], url_path='by-share-id/(?P<share_id>[^/.]+)')
+    @action(
+        detail=False,
+        methods=['get'],
+        url_path='by-share-id/(?P<share_id>[^/.]+)',
+        # Public: skip auth entirely so a stale/expired Authorization header
+        # from a previously-signed-in browser cannot cause a 401.
+        authentication_classes=[],
+        permission_classes=[permissions.AllowAny],
+    )
     def by_share_id(self, request, share_id=None):
         # Public access allowed
         form = get_object_or_404(self.get_queryset(), share_id=share_id)
@@ -585,7 +593,15 @@ class FormViewSet(viewsets.ModelViewSet):
         FormArchive.objects.filter(user=request.user, form=form).delete()
         return DRFResponse({'detail': 'Form restored.'}, status=status.HTTP_200_OK)
 
-    @action(detail=True, methods=['post'], throttle_classes=[SubmissionRateThrottle])
+    @action(
+        detail=True,
+        methods=['post'],
+        throttle_classes=[SubmissionRateThrottle],
+        # Public: skip auth entirely so a stale/expired Authorization header
+        # from a previously-signed-in browser cannot cause a 401.
+        authentication_classes=[],
+        permission_classes=[permissions.AllowAny],
+    )
     def submit(self, request, pk=None):
         # Public access allowed
         form = self.get_object()

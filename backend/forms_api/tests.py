@@ -219,6 +219,39 @@ class FormAccessTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data['sections']), 2)
 
+    def _expired_access_token(self, user):
+        from rest_framework_simplejwt.tokens import RefreshToken
+
+        access = RefreshToken.for_user(user).access_token
+        access.set_exp(lifetime=timedelta(seconds=-10))
+        return str(access)
+
+    def test_share_lookup_allows_expired_token_header(self):
+        """A previously-authenticated browser with an expired JWT must still
+        be able to load the public share form (no 401 from auth layer)."""
+        expired_access = self._expired_access_token(self.owner)
+
+        response = self.client.get(
+            reverse('form-by-share-id', kwargs={'share_id': self.form.share_id}),
+            HTTP_AUTHORIZATION=f'Bearer {expired_access}',
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_submit_allows_expired_token_header(self):
+        """Submitting via the public endpoint must not 401 when the browser
+        sends a stale/expired Authorization header."""
+        expired_access = self._expired_access_token(self.owner)
+
+        response = self.client.post(
+            reverse('form-submit', args=[self.form.id]),
+            {'answers': []},
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {expired_access}',
+        )
+
+        self.assertEqual(response.status_code, 201)
+
     def test_responses_rejects_zero_page_size(self):
         self.client.force_authenticate(user=self.owner)
 

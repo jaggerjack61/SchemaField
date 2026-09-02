@@ -6,6 +6,10 @@ const api = axios.create({
 
 let refreshPromise = null
 
+function isOnPublicRoute() {
+  return window.location.pathname.startsWith('/f/')
+}
+
 function refreshAccessToken(refreshToken) {
   if (!refreshPromise) {
     refreshPromise = axios
@@ -98,14 +102,14 @@ api.interceptors.response.use(
             // Refresh failed — log out
             localStorage.removeItem('access_token')
             localStorage.removeItem('refresh_token')
-            if (window.location.pathname !== '/login') {
+            if (!isOnPublicRoute() && window.location.pathname !== '/login') {
               window.location.href = '/login'
             }
             return Promise.reject(refreshError)
           }
         } else {
           localStorage.removeItem('access_token')
-          if (window.location.pathname !== '/login') {
+          if (!isOnPublicRoute() && window.location.pathname !== '/login') {
             window.location.href = '/login'
           }
         }
