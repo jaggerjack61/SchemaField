@@ -100,10 +100,6 @@ npm run dev
 
 The frontend will be available at `http://localhost:5173`.
 
-#### One-Command Start (Windows)
-
-Run `start.bat` from the project root to automatically set up the venv, install dependencies, run migrations, and start both backend and frontend in separate windows.
-
 ---
 
 ## API Overview
@@ -199,9 +195,6 @@ Run `start.bat` from the project root to automatically set up the venv, install 
 
 | Script | Description |
 |---|---|
-| `start.bat` | One-command Windows startup (venv setup, migrations, both servers) |
-| `start.ps1` | PowerShell equivalent of `start.bat` |
-| `g.bat` | Git helper — `g.bat "message"` to add/commit/push, `-p` to pull, `-b <branch>` to checkout |
 | `backend/p.bat` | Django helper — `p` runserver, `p <port>` runserver on port, `-a` activate venv, `-m` migrate, `-m -r` refresh DB + migrate, `-cs` createsuperuser, `-c` check |
 
 ---
