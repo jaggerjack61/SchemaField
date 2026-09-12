@@ -6,7 +6,8 @@ from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
-from django.db.models import Q, Count, Prefetch
+from django.db.models import Q, Count, Prefetch, Exists, OuterRef, Subquery
+from django.db.models.functions import Coalesce
 from django.contrib.auth import get_user_model
 from django.conf import settings
 from django.http import StreamingHttpResponse
@@ -21,7 +22,9 @@ import shutil
 import uuid as _uuid
 from datetime import datetime, timezone as dt_timezone
 
-from .models import Form, FormPermission, Answer, Question, FormArchive
+from .models import Form, FormPermission, Answer, Question, Section, Response, FormArchive
+from .csv_utils import safe_csv_cell
+from .response_queries import filter_responses, order_responses, response_analytics
 from .serializers import (
     FormListSerializer, FormDetailSerializer, ResponseSerializer,
     UserSerializer, LoginSerializer, CreateUserSerializer, 
@@ -201,6 +204,7 @@ class UserViewSet(viewsets.ModelViewSet):
         referenced_files = referenced_upload_files | referenced_qrcode_files | referenced_question_media
 
         orphaned_files = []
+        cutoff = timezone.now().timestamp() - getattr(settings, 'ORPHAN_UPLOAD_GRACE_SECONDS', 86400)
         question_media_root = (media_root / 'question_media').resolve()
         question_media_root.mkdir(parents=True, exist_ok=True)
 
@@ -209,7 +213,7 @@ class UserViewSet(viewsets.ModelViewSet):
                 if not path.is_file():
                     continue
                 relative_path = path.relative_to(media_root).as_posix()
-                if relative_path not in referenced_files:
+                if relative_path not in referenced_files and path.stat().st_mtime < cutoff:
                     orphaned_files.append(path)
 
         return media_root, orphaned_files
@@ -233,9 +237,13 @@ class UserViewSet(viewsets.ModelViewSet):
 
         forms_with_most_files = (
             Form.objects
-            .filter(responses__answers__file_answer__isnull=False)
-            .exclude(responses__answers__file_answer='')
-            .annotate(file_count=Count('responses__answers__id', distinct=True))
+            .annotate(file_count=Count(
+                'responses__answers__id',
+                filter=Q(responses__answers__file_answer__isnull=False)
+                & ~Q(responses__answers__file_answer=''),
+                distinct=True,
+            ))
+            .filter(file_count__gt=0)
             .order_by('-file_count', '-updated_at')
             .values('id', 'title', 'file_count')[:10]
         )
@@ -431,6 +439,11 @@ class UserViewSet(viewsets.ModelViewSet):
         for path in orphaned_files:
             relative_path = path.relative_to(media_root).as_posix()
             try:
+                # A form may have been saved since the cleanup scan began.
+                if (Question.objects.filter(media_file=relative_path).exists()
+                        or Answer.objects.filter(file_answer=relative_path).exists()
+                        or Form.objects.filter(qr_code=relative_path).exists()):
+                    continue
                 path.unlink()
                 deleted_count += 1
             except OSError as exc:
@@ -471,14 +484,17 @@ class FormViewSet(viewsets.ModelViewSet):
             qs = (owned_forms | shared_forms).distinct().order_by('-updated_at')
 
         if self.action == 'list':
-            from django.db.models import Exists, OuterRef, Q
             archive_subquery = FormArchive.objects.filter(
                 user=user, form=OuterRef('pk')
             )
+            def related_count(model, relation):
+                counts = model.objects.filter(**{relation: OuterRef('pk')}).order_by().values(relation).annotate(total=Count('pk'))
+                return Coalesce(Subquery(counts.values('total')), 0)
+
             qs = qs.select_related('owner').annotate(
-                _section_count=Count('sections', distinct=True),
-                _question_count=Count('sections__questions', distinct=True),
-                _response_count=Count('responses', distinct=True),
+                _section_count=related_count(Section, 'form'),
+                _question_count=related_count(Question, 'section__form'),
+                _response_count=related_count(Response, 'form'),
                 _is_archived=Exists(archive_subquery),
             ).prefetch_related(
                 Prefetch(
@@ -549,7 +565,7 @@ class FormViewSet(viewsets.ModelViewSet):
             if not FormPermission.objects.filter(form=obj, user=request.user, permission_type='edit').exists():
                 self.permission_denied(request, message="You do not have permission to edit this form.")
         
-        elif self.action in ['responses', 'export_csv']:
+        elif self.action in ['responses', 'export_csv', 'analytics']:
              if not FormPermission.objects.filter(form=obj, user=request.user, permission_type='view_responses').exists():
                 self.permission_denied(request, message="You do not have permission to view responses.")
         
@@ -622,7 +638,7 @@ class FormViewSet(viewsets.ModelViewSet):
             )
 
         # Construct data for serializer manually to avoid QueryDict issues with nested data
-        data = {'form': form.id}
+        data = {'form': form.id, 'answers': []}
 
         # Handle nested multipart data parsing
         import re
@@ -688,9 +704,9 @@ class FormViewSet(viewsets.ModelViewSet):
             100,
         )
 
-        responses = form.responses.prefetch_related(
-            'answers__question', 'answers__selected_choices'
-        ).order_by('-created_at')
+        responses = order_responses(filter_responses(form, request.query_params), form, request.query_params).prefetch_related(
+            'answers__selected_choices'
+        )
 
         paginator = rest_framework.pagination.PageNumberPagination()
         paginator.page_size = page_size
@@ -699,19 +715,28 @@ class FormViewSet(viewsets.ModelViewSet):
         return paginator.get_paginated_response(serializer.data)
 
     @action(detail=True, methods=['get'])
+    def analytics(self, request, pk=None):
+        form = self.get_object()
+        responses = filter_responses(form, request.query_params)
+        return DRFResponse(response_analytics(form, responses, request.query_params))
+
+    @action(detail=True, methods=['get'])
     def export_csv(self, request, pk=None):
         form = self.get_object()
+        # Validate filters before sending a streaming response's headers.
+        filtered_responses = filter_responses(form, request.query_params)
 
         def csv_rows():
             output = io.StringIO()
-            writer = csv.writer(output)
+            writer = csv.writer(output, quoting=csv.QUOTE_ALL)
 
             # Headers
             headers = ['Response ID', 'Submitted At']
             questions = []
             for section in form.sections.prefetch_related('questions').all():
                 for question in section.questions.all():
-                    headers.append(question.text)
+                    label = f'{section.title} - {question.text}' if request.query_params.get('section_titles') == 'true' else question.text
+                    headers.append(safe_csv_cell(label))
                     questions.append(question)
             writer.writerow(headers)
             yield output.getvalue()
@@ -719,9 +744,9 @@ class FormViewSet(viewsets.ModelViewSet):
             output.truncate(0)
 
             # Rows
-            responses = form.responses.prefetch_related(
-                'answers__question', 'answers__selected_choices'
-            ).order_by('-created_at')
+            responses = filtered_responses.prefetch_related(
+                'answers__selected_choices'
+            ).order_by('-created_at', '-id')
 
             # A chunked iterator keeps prefetching bounded so this streaming
             # response does not cache the full response history in memory.
@@ -734,11 +759,11 @@ class FormViewSet(viewsets.ModelViewSet):
                         row.append('')
                     elif q.question_type in ['multiple_choice', 'multiple_select']:
                         choices = [c.text for c in answer.selected_choices.all()]
-                        row.append(', '.join(choices))
+                        row.append(safe_csv_cell(', '.join(choices)))
                     elif q.question_type == 'media':
                         row.append(request.build_absolute_uri(answer.file_answer.url) if answer.file_answer else '')
                     else:
-                        row.append(answer.text_answer or '')
+                        row.append(safe_csv_cell(answer.text_answer, numeric=q.question_type in ('number', 'float')))
                 writer.writerow(row)
                 yield output.getvalue()
                 output.seek(0)
@@ -768,7 +793,7 @@ class FormPermissionViewSet(viewsets.ModelViewSet):
         # Ensure form belongs to user
         form = serializer.validated_data['form']
         if form.owner != self.request.user:
-            raise permissions.PermissionDenied("You can only grant permissions for your own forms.")
+            self.permission_denied(self.request, message="You can only grant permissions for your own forms.")
             
         # Ensure user exists (validated by serializer, but good to check context if needed)
         serializer.save()

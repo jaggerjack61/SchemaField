@@ -1,7 +1,8 @@
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, DecimalException, InvalidOperation
 
 from django.contrib.auth.password_validation import validate_password
 from django.db import transaction
+from django.core.files.storage import default_storage
 from rest_framework import serializers
 from .models import Form, Section, Question, Choice, Response, Answer, FormPermission, FormArchive
 from .upload_validation import media_upload_error
@@ -33,6 +34,18 @@ class QuestionSerializer(serializers.ModelSerializer):
             return obj.media_file.url
         return None
 
+    def validate_media_file(self, value):
+        if value:
+            # Uploads can expire before an abandoned editor is saved. Never
+            # persist a new reference to a file that cleanup has removed.
+            from pathlib import PurePosixPath
+            path = PurePosixPath(value)
+            if path.is_absolute() or '..' in path.parts or not value.startswith('question_media/'):
+                raise serializers.ValidationError('Invalid question media path.')
+            if not default_storage.exists(value):
+                raise serializers.ValidationError('This upload is no longer available. Please upload it again.')
+        return value
+
 
 class SectionSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(required=False)
@@ -59,7 +72,8 @@ class CreateUserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['email', 'name', 'password', 'role']
+        fields = ['id', 'email', 'name', 'password', 'role', 'is_active', 'date_joined']
+        read_only_fields = ['id', 'is_active', 'date_joined']
 
     def create(self, validated_data):
         return User.objects.create_user(**validated_data)
@@ -99,6 +113,23 @@ class FormPermissionSerializer(serializers.ModelSerializer):
         fields = ['id', 'form', 'user', 'user_email', 'user_name', 'permission_type', 'created_at', 'email']
         read_only_fields = ['user']
         validators = []
+
+    def validate(self, attrs):
+        form = attrs.get('form', getattr(self.instance, 'form', None))
+        if self.instance and form.pk != self.instance.form_id:
+            raise serializers.ValidationError({'form': 'A permission cannot be moved to another form.'})
+        request = self.context.get('request')
+        if request and form.owner_id != request.user.pk:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('You can only grant permissions for your own forms.')
+        if self.instance:
+            if 'email' in attrs:
+                raise serializers.ValidationError({'email': 'Remove and recreate the permission to change its user.'})
+            permission_type = attrs.get('permission_type', self.instance.permission_type)
+            if FormPermission.objects.filter(form=form, user=self.instance.user,
+                                             permission_type=permission_type).exclude(pk=self.instance.pk).exists():
+                raise serializers.ValidationError({'permission_type': 'This user already has this permission.'})
+        return attrs
 
     def create(self, validated_data):
         email = validated_data.pop('email', None)
@@ -285,6 +316,11 @@ class FormDetailSerializer(serializers.ModelSerializer):
 
                 if q_id:
                     question = existing_questions[q_id]
+                    new_type = q_data.get('question_type', question.question_type)
+                    if new_type != question.question_type and question.answers.exists():
+                        raise serializers.ValidationError({
+                            'sections': 'The type of a question with historical answers cannot be changed. Add a new question instead.',
+                        })
                     if media_file is not serializers.empty:
                         question.media_file = media_file or ''
                     for attr in ('text', 'question_type', 'required', 'order'):
@@ -426,13 +462,19 @@ class AnswerSerializer(serializers.ModelSerializer):
                     )
             elif question.question_type == 'float':
                 try:
-                    decimal_value = Decimal(text_answer)
-                    if not decimal_value.is_finite():
+                    if len(text_answer) > 1024:
                         raise InvalidOperation
-                    text_answer = str(decimal_value.normalize())
+                    decimal_value = Decimal(text_answer)
+                    if (not decimal_value.is_finite()
+                            or abs(decimal_value.as_tuple().exponent) > 308
+                            or abs(decimal_value.adjusted()) > 308):
+                        raise InvalidOperation
+                    # normalize() rounds to the current decimal context and can
+                    # overflow. Decimal's string form retains the submitted precision.
+                    text_answer = str(decimal_value)
                     if decimal_value == 0:
                         text_answer = '0'
-                except (InvalidOperation, ValueError, TypeError):
+                except (DecimalException, ValueError, TypeError):
                     raise serializers.ValidationError(
                         {'text_answer': 'A valid number is required for this question.'}
                     )
@@ -535,4 +577,3 @@ class ResponseSerializer(serializers.ModelSerializer):
             answer = Answer.objects.create(response=response, **answer_data)
             answer.selected_choices.set(selected_choices)
         return response
-

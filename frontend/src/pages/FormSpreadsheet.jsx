@@ -2,10 +2,14 @@ import { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { getForm, getFormResponses, exportFormResponses } from '../api'
 
+import Pagination from '../components/Pagination'
+
 export default function FormSpreadsheet() {
   const { id } = useParams()
   const [form, setForm] = useState(null)
   const [responses, setResponses] = useState([])
+  const [page, setPage] = useState(1)
+  const [count, setCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [sort, setSort] = useState({ key: 'submittedAt', direction: 'desc' })
@@ -16,15 +20,19 @@ export default function FormSpreadsheet() {
 
   useEffect(() => {
     let cancelled = false
+    const controller = new AbortController()
+    setLoading(true)
+    setError(null)
     async function load() {
       try {
         const [formRes, responsesRes] = await Promise.all([
           getForm(id),
-          getFormResponses(id),
+          getFormResponses(id, { page, page_size: 50, sort: sort.key || 'submittedAt', direction: sort.direction || 'desc' }, controller.signal),
         ])
         if (!cancelled) {
           setForm(formRes.data)
-          setResponses(responsesRes.data.results || responsesRes.data)
+          setResponses(responsesRes.data.results)
+          setCount(responsesRes.data.count ?? responsesRes.data.results.length)
         }
       } catch (err) {
         if (!cancelled) setError('Failed to load data.')
@@ -33,8 +41,8 @@ export default function FormSpreadsheet() {
       }
     }
     load()
-    return () => { cancelled = true }
-  }, [id])
+    return () => { cancelled = true; controller.abort() }
+  }, [id, page, sort])
 
   const { columns, rows } = useMemo(() => {
     if (!form) return { columns: [], rows: [] }
@@ -74,29 +82,8 @@ export default function FormSpreadsheet() {
     return { columns: cols, rows: answerRows }
   }, [form, responses])
 
-  const sortedRows = useMemo(() => {
-    if (!sort.key) return rows
-
-    return [...rows].sort((a, b) => {
-      let aVal = a[sort.key]
-      let bVal = b[sort.key]
-
-      if (sort.key === 'submittedAt') {
-        aVal = new Date(aVal).getTime()
-        bVal = new Date(bVal).getTime()
-      } else if (sort.key === 'id') {
-        aVal = Number(aVal)
-        bVal = Number(bVal)
-      } else {
-        aVal = String(aVal || '').toLowerCase()
-        bVal = String(bVal || '').toLowerCase()
-      }
-
-      if (aVal < bVal) return sort.direction === 'asc' ? -1 : 1
-      if (aVal > bVal) return sort.direction === 'asc' ? 1 : -1
-      return 0
-    })
-  }, [rows, sort])
+  // The server sorts the entire history before selecting this page.
+  const sortedRows = rows
 
   useLayoutEffect(() => {
     function updateFillerRows() {
@@ -134,9 +121,10 @@ export default function FormSpreadsheet() {
     updateFillerRows()
     window.addEventListener('resize', updateFillerRows)
     return () => window.removeEventListener('resize', updateFillerRows)
-  }, [sortedRows])
+  }, [sortedRows, loading])
 
   function handleSort(key) {
+    setPage(1)
     setSort((current) => {
       if (current.key === key) {
         if (current.direction === 'asc') return { key, direction: 'desc' }
@@ -171,7 +159,7 @@ export default function FormSpreadsheet() {
       <div className="dashboard-header">
         <div>
           <h1>Spreadsheet: {form.title}</h1>
-          <span className="form-count">{responses.length} response{responses.length !== 1 ? 's' : ''}</span>
+          <span className="form-count">{count} response{count !== 1 ? 's' : ''}</span>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
           <button onClick={handleExportCSV} className="btn btn-secondary">
@@ -182,6 +170,8 @@ export default function FormSpreadsheet() {
           </Link>
         </div>
       </div>
+
+      <Pagination page={page} pageSize={50} count={count} onPage={setPage} disabled={loading} />
 
       {responses.length === 0 ? (
         <div className="empty-state">

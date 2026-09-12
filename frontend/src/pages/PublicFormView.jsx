@@ -197,11 +197,12 @@ export default function PublicFormView() {
       })
 
       // If form requires multipart, Axios handles it if data is FormData
-      await submitForm(form.id, formData)
+      await submitForm(form.id, answerIndex ? formData : { answers: [] })
       setSubmitted(true)
     } catch (err) {
       console.error(err)
-      setErrorMessage(err.response?.data?.detail || 'Failed to submit form. Please check your connection and try again.')
+      const errors = err.response?.data
+      setErrorMessage(errors?.detail || (errors ? Object.values(errors).flat().map(value => typeof value === 'string' ? value : JSON.stringify(value)).join(' ') : 'Failed to submit form. Please check your connection and try again.'))
       setShowErrorModal(true)
     } finally {
       setSubmitting(false)

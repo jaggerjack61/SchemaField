@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import ImagePreviewModal, { isImageUrl } from '../components/ImagePreviewModal'
+import Pagination from '../components/Pagination'
 import {
   getFileManagerSummary,
   getFileManagerBrowser,
@@ -17,6 +18,9 @@ export default function AdminFileManagement() {
     parent_path: null,
     directories: [],
     files: [],
+    page: 1,
+    page_size: 50,
+    total_entries: 0,
   })
   const [browserLoading, setBrowserLoading] = useState(true)
   const [deletingFilePath, setDeletingFilePath] = useState('')
@@ -45,10 +49,12 @@ export default function AdminFileManagement() {
     }
   }
 
-  async function loadFileBrowser(path = '', silent = false) {
+  async function loadFileBrowser(path = '', silent = false, page = 1) {
     if (!silent) setBrowserLoading(true)
     try {
-      const { data } = await getFileManagerBrowser(path)
+      let { data } = await getFileManagerBrowser(path, page)
+      const lastPage = Math.max(1, Math.ceil(data.total_entries / data.page_size))
+      if (page > lastPage) ({ data } = await getFileManagerBrowser(path, lastPage))
       setBrowser(data)
     } catch (err) {
       showToast('Failed to load files', 'error')
@@ -65,7 +71,7 @@ export default function AdminFileManagement() {
       showToast('File deleted', 'success')
       await Promise.all([
         loadFileSummary(true),
-        loadFileBrowser(browser.current_path || '', true),
+        loadFileBrowser(browser.current_path || '', true, browser.page),
       ])
     } catch (err) {
       showToast(err.response?.data?.detail || 'Failed to delete file', 'error')
@@ -106,7 +112,7 @@ export default function AdminFileManagement() {
       await Promise.all([
         loadCleanupPreview(false),
         loadFileSummary(true),
-        loadFileBrowser(browser.current_path || '', true),
+        loadFileBrowser(browser.current_path || '', true, browser.page),
       ])
       setShowCleanupFiles(false)
     } catch (err) {
@@ -152,7 +158,7 @@ export default function AdminFileManagement() {
           className="btn btn-secondary"
           onClick={() => {
             loadFileSummary()
-            loadFileBrowser(browser.current_path || '')
+            loadFileBrowser(browser.current_path || '', false, browser.page)
           }}
           disabled={summaryLoading || browserLoading}
         >
@@ -318,7 +324,7 @@ export default function AdminFileManagement() {
             </button>
             <button
               className="btn btn-secondary"
-              onClick={() => loadFileBrowser(browser.current_path || '')}
+              onClick={() => loadFileBrowser(browser.current_path || '', false, browser.page)}
               disabled={browserLoading}
             >
               Refresh
@@ -397,6 +403,8 @@ export default function AdminFileManagement() {
       </div>
 
       <ImagePreviewModal url={previewUrl} isOpen={Boolean(previewUrl)} onClose={closePreview} />
+      <Pagination page={browser.page} pageSize={browser.page_size} count={browser.total_entries}
+        disabled={browserLoading} onPage={page => loadFileBrowser(browser.current_path, false, page)} />
 
       {toast && <div className={`toast ${toast.type}`}>{toast.message}</div>}
     </div>

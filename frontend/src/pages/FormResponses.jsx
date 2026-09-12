@@ -1,23 +1,29 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { getForm, getFormResponses, exportFormResponses } from '../api'
+import { getForm, getFormResponses, getFormAnalytics, exportFormResponses } from '../api'
+
+import ResponseSummary from '../components/ResponseSummary'
+import Pagination from '../components/Pagination'
 
 export default function FormResponses() {
   const { id } = useParams()
   const [form, setForm] = useState(null)
-  const [responses, setResponses] = useState([])
+  const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [activeTab, setActiveTab] = useState('summary')
 
   useEffect(() => {
     let cancelled = false
+    const controller = new AbortController()
+    setLoading(true)
+    setError(null)
     async function load() {
       try {
-        const [formRes, responsesRes] = await Promise.all([getForm(id), getFormResponses(id)])
+        const [formRes, responsesRes] = await Promise.all([getForm(id), getFormAnalytics(id, {}, controller.signal)])
         if (!cancelled) {
           setForm(formRes.data)
-          setResponses(responsesRes.data.results || responsesRes.data)
+          setSummary(responsesRes.data)
         }
       } catch (err) {
         if (!cancelled) setError('Failed to load data.')
@@ -26,7 +32,7 @@ export default function FormResponses() {
       }
     }
     load()
-    return () => { cancelled = true }
+    return () => { cancelled = true; controller.abort() }
   }, [id])
 
   // Create lookup for questions — must be before any early returns
@@ -73,7 +79,7 @@ export default function FormResponses() {
       <div className="dashboard-header">
         <div>
            <h1>Responses: {form.title}</h1>
-           <span className="form-count">{responses.length} response{responses.length !== 1 ? 's' : ''}</span>
+           <span className="form-count">{summary.count} response{summary.count !== 1 ? 's' : ''}</span>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
           <Link
@@ -109,21 +115,18 @@ export default function FormResponses() {
         </button>
       </div>
 
-      {responses.length === 0 ? (
+      {summary.count === 0 ? (
         <div className="empty-state">
            <div className="empty-icon">📭</div>
            <h2>No responses yet</h2>
            <p>Share your form link to get started!</p>
         </div>
       ) : activeTab === 'summary' ? (
-        <SummaryView 
-          form={form} 
-          responses={responses} 
-          choicesMap={choicesMap} 
-        />
+        <ResponseSummary form={form} summary={summary} />
       ) : (
         <IndividualView 
-          responses={responses} 
+          key={id}
+          formId={id}
           questionsMap={questionsMap} 
           choicesMap={choicesMap} 
         />
@@ -132,180 +135,29 @@ export default function FormResponses() {
   )
 }
 
-function SummaryView({ form, responses, choicesMap }) {
-  return (
-    <div className="summary-view">
-      {form.sections.map(section => (
-        <div key={section.id}>
-          {form.sections.length > 1 && <h2 style={{ marginBottom: '16px' }}>{section.title}</h2>}
-          
-          {section.questions.map(question => (
-            <SummaryQuestion 
-              key={question.id} 
-              question={question} 
-              responses={responses} 
-              choicesMap={choicesMap} 
-            />
-          ))}
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function SummaryQuestion({ question, responses, choicesMap }) {
-  // Aggregate data
-  const answers = responses.flatMap(r => 
-    r.answers.filter(a => a.question === question.id)
-  )
-
-  return (
-    <div className="summary-card">
-      <div className="summary-question">{question.text}</div>
-      <div className="summary-stats">
-        {question.question_type === 'multiple_choice' || question.question_type === 'multiple_select' ? (
-          <ChoiceStats 
-            question={question} 
-            answers={answers} 
-            choicesMap={choicesMap} 
-            totalResponses={responses.length}
-          />
-        ) : question.question_type === 'media' ? (
-          <FileStats answers={answers} />
-        ) : (
-          <TextStats answers={answers} totalResponses={responses.length} />
-        )}
-      </div>
-    </div>
-  )
-}
-
-function FileStats({ answers }) {
-  const fileAnswers = answers.filter(a => a.file_answer)
-  
-  return (
-    <div>
-      <div style={{ marginBottom: '12px', fontStyle: 'italic', color: 'var(--text-secondary)' }}>
-        {fileAnswers.length} file{fileAnswers.length !== 1 ? 's' : ''} uploaded
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {fileAnswers.map(answer => (
-          <div key={answer.id} className="chart-row">
-            <a 
-              href={answer.file_answer} 
-              target="_blank" 
-              rel="noopener noreferrer"
-              style={{ color: 'var(--primary)', textDecoration: 'underline', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-            >
-              {answer.file_answer.split('/').pop()}
-            </a>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function ChoiceStats({ question, answers, choicesMap, totalResponses }) {
-  const counts = {}
-  question.choices.forEach(c => counts[c.id] = 0)
-  
-  answers.forEach(a => {
-    const selectedChoices = Array.isArray(a.selected_choices) ? a.selected_choices : []
-    selectedChoices.forEach(cId => {
-      counts[cId] = (counts[cId] || 0) + 1
-    })
-  })
-
-  const validAnswers = answers.filter(a => Array.isArray(a.selected_choices) && a.selected_choices.length > 0).length
-
-  return (
-    <div>
-      {question.choices.map(choice => {
-        const count = counts[choice.id] || 0
-        const displayPercent = validAnswers > 0 ? Math.round((count / validAnswers) * 100) : 0
-        
-        return (
-          <div key={choice.id} className="chart-row">
-            <div className="chart-label" title={choice.text}>{choice.text}</div>
-            <div className="chart-bar-container">
-              <div 
-                className="chart-bar-fill" 
-                style={{ width: `${displayPercent}%` }}
-              />
-            </div>
-            <div className="chart-count">
-              {count}{validAnswers > 0 ? ` (${displayPercent}%)` : ''}
-            </div>
-          </div>
-        )
-      })}
-      <div style={{ marginTop: '12px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-        {validAnswers} response{validAnswers !== 1 ? 's' : ''}
-      </div>
-    </div>
-  )
-}
-
-function TextStats({ answers, totalResponses }) {
-  // Group by text value
-  const groups = {}
-  answers.forEach(a => {
-    const text = a.text_answer || '(No answer)'
-    groups[text] = (groups[text] || 0) + 1
-  })
-  
-  const sortedGroups = Object.entries(groups).sort((a, b) => b[1] - a[1])
-  
-  return (
-    <div>
-      {sortedGroups.slice(0, 5).map(([text, count], i) => (
-        <div key={i} className="chart-row">
-          <div className="chart-label" style={{ width: 'auto', flex: 1 }}>"{text}"</div>
-          <div style={{ fontWeight: 500 }}>{count}</div>
-        </div>
-      ))}
-      {sortedGroups.length > 5 && (
-        <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '8px' }}>
-          ...and {sortedGroups.length - 5} more unique answers
-        </div>
-      )}
-      <div style={{ marginTop: '12px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-        {answers.length} responses
-      </div>
-    </div>
-  )
-}
-
-function IndividualView({ responses, questionsMap, choicesMap }) {
-  const [index, setIndex] = useState(0)
-  
-  // Sort responses by date desc? They come from API desc.
-  const response = responses[index]
-  const total = responses.length
-
-  function prev() {
-    setIndex(i => Math.max(0, i - 1))
-  }
-
-  function next() {
-    setIndex(i => Math.min(total - 1, i + 1))
-  }
+function IndividualView({ formId, questionsMap, choicesMap }) {
+  const [page, setPage] = useState(1)
+  const [response, setResponse] = useState(null)
+  const [total, setTotal] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    let cancelled = false
+    const controller = new AbortController()
+    setLoading(true)
+    setError('')
+    getFormResponses(formId, { page, page_size: 1 }, controller.signal)
+      .then(({ data }) => { if (!cancelled) { setResponse(data.results[0] || null); setTotal(data.count) } })
+      .catch(() => { if (!cancelled) setError('Failed to load response.') })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true; controller.abort() }
+  }, [formId, page])
 
   return (
     <div className="individual-view">
-      <div className="pagination-controls">
-         <button className="btn btn-secondary" onClick={prev} disabled={index === 0}>
-           ← Previous
-         </button>
-         <div className="response-counter">
-           {index + 1} of {total}
-         </div>
-         <button className="btn btn-secondary" onClick={next} disabled={index === total - 1}>
-           Next →
-         </button>
-      </div>
-
+      <Pagination page={page} pageSize={1} count={total} onPage={setPage} disabled={loading} />
+      {error && <p role="alert">{error}</p>}
+      {loading ? <div className="loading"><div className="spinner" /></div> : response && (
       <div className="form-card" style={{ cursor: 'default' }}>
          <div className="form-card-title">
             Submission at {new Date(response.created_at).toLocaleString()}
@@ -343,6 +195,7 @@ function IndividualView({ responses, questionsMap, choicesMap }) {
            })}
          </div>
       </div>
+      )}
     </div>
   )
 }

@@ -116,6 +116,7 @@ The frontend will be available at `http://localhost:5173`.
 | `GET /api/forms/by-share-id/{share_id}/` | Get form by share ID (public) |
 | `POST /api/forms/{id}/submit/` | Submit a form response (public) |
 | `GET /api/forms/{id}/responses/` | Paginated responses for a form |
+| `GET /api/forms/{id}/analytics/` | Aggregated summaries and daily/weekly trends, optionally filtered |
 | `GET /api/forms/{id}/export_csv/` | Stream responses as CSV |
 | `POST /api/forms/{id}/archive/` | Archive a form for the current user |
 | `POST /api/forms/{id}/restore/` | Restore (un-archive) a form |
@@ -154,13 +155,22 @@ The frontend will be available at `http://localhost:5173`.
 - **Response collection** with text, file, and choice-based answers
 - **Paginated response viewer** with per-form breakdown (`/forms/:id/responses`)
 - **Spreadsheet view** for scanning responses row-by-row (`/forms/:id/responses/spreadsheet`)
+- Response and spreadsheet views load one page at a time. Spreadsheet sorting is applied to the entire history before pagination, including exact numeric ordering for large integers and decimals in SQLite.
 - **CSV export** — streaming download of all responses (`/api/forms/{id}/export_csv/`)
 - **Form analytics** dashboard (`/forms/:id/responses/analytics`)
+
+Response lists, analytics, and CSV exports accept a `filters` query parameter containing a JSON list of answer filters (up to 20, combined with AND). Filters use `questionId` plus `textQuery`, `choiceId`, `mediaMode` (`with_file` / `without_file`), or `numericOperator` and `numericValue`. Response lists also accept `page`, `page_size` (up to 100), `sort` (`submittedAt`, `id`, or a question ID), and `direction` (`asc` / `desc`). Analytics accepts `trend` (`daily` / `weekly`) and an IANA `timezone`. Summaries cover the full matching history and return at most five text/file previews per question.
+
+CSV exports quote every field and prefix formula-like text with a tab for spreadsheet safety; validated numeric answers retain their numeric spelling. The protective tab remains in the data if the CSV is imported programmatically.
+
+Answered questions retain their type to protect historical responses. Add a new question when changing the kind of answer collected.
 
 ### Admin Panel
 
 - **User management** — view, edit, create, and reset passwords (`/admin/users`)
 - **File management** — browse, delete, and clean up orphaned uploaded files (`/admin/files`)
+
+Orphan cleanup excludes files modified within the last 24 hours (`ORPHAN_UPLOAD_GRACE_SECONDS` in Django settings), giving editors time to save pending uploads. It rechecks database references before deletion. If an abandoned upload has already been removed, saving the form reports that the file must be uploaded again.
 
 ### User Account
 

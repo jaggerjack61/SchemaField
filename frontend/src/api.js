@@ -134,8 +134,9 @@ export const deleteForm = (id) => api.delete('/forms/' + id + '/')
 export const archiveForm = (id) => api.post('/forms/' + id + '/archive/')
 export const restoreForm = (id) => api.post('/forms/' + id + '/restore/')
 export const submitForm = (id, data) => api.post('/forms/' + id + '/submit/', data)
-export const getFormResponses = (id) => getAllPages('/forms/' + id + '/responses/')
-export const exportFormResponses = (id) => api.get('/forms/' + id + '/export_csv/', { responseType: 'blob' })  // Expect binary data
+export const getFormResponses = (id, params = {}, signal) => api.get('/forms/' + id + '/responses/', { params: { page_size: 50, ...params }, signal })
+export const getFormAnalytics = (id, params = {}, signal) => api.get('/forms/' + id + '/analytics/', { params, signal })
+export const exportFormResponses = (id, params = {}) => api.get('/forms/' + id + '/export_csv/', { params, responseType: 'blob' })
 
 // Question media upload
 export const uploadQuestionMedia = (file) => {
@@ -150,7 +151,7 @@ export const createUser = (data) => api.post('/users/', data)
 export const updateUser = (id, data) => api.patch(`/users/${id}/`, data)
 export const resetUserPassword = (id, password) => api.post('/users/' + id + '/reset_password/', { password })
 export const getFileManagerSummary = () => api.get('/users/file-manager/summary/')
-export const getFileManagerBrowser = (path = '') => api.get('/users/file-manager/browser/', { params: { path } })
+export const getFileManagerBrowser = (path = '', page = 1) => api.get('/users/file-manager/browser/', { params: { path, page } })
 export const deleteManagedFile = (path) => api.delete('/users/file-manager/file/', { params: { path } })
 export const getCleanupPreview = (view = false) => api.get('/users/file-manager/cleanup-preview/', { params: { view } })
 export const runOrphanedCleanup = () => api.post('/users/file-manager/cleanup-orphaned-files/')

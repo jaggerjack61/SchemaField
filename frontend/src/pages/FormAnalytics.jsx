@@ -1,19 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { getForm, getFormResponses } from '../api'
-
-const COMMON_STOPWORDS = new Set([
-  'about', 'after', 'again', 'against', 'also', 'among', 'because', 'before', 'being', 'below',
-  'between', 'could', 'does', 'doing', 'during', 'from', 'have', 'having', 'just', 'more',
-  'most', 'other', 'over', 'same', 'some', 'such', 'than', 'that', 'their', 'there', 'these',
-  'they', 'this', 'those', 'through', 'very', 'what', 'when', 'where', 'which', 'while', 'with',
-  'would', 'your', 'you', 'the', 'and', 'for', 'are', 'not', 'was', 'were', 'can'
-])
+import { getForm, getFormAnalytics, exportFormResponses } from '../api'
+import ResponseSummary from '../components/ResponseSummary'
 
 export default function FormAnalytics() {
   const { id } = useParams()
   const [form, setForm] = useState(null)
-  const [responses, setResponses] = useState([])
+  const [summary, setSummary] = useState(null)
+  const [refreshing, setRefreshing] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [trendMode, setTrendMode] = useState('daily')
@@ -23,24 +18,16 @@ export default function FormAnalytics() {
   const [filters, setFilters] = useState(() => [createEmptyFilter(1)])
 
   useEffect(() => {
-    loadData()
+    let cancelled = false
+    setLoading(true)
+    setError(null)
+    setSummary(null)
+    setFilters([createEmptyFilter(1)])
+    getForm(id).then(({ data }) => { if (!cancelled) setForm(data) })
+      .catch(() => { if (!cancelled) setError('Failed to load form.') })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
   }, [id])
-
-  async function loadData() {
-    try {
-      const [formData, responsesData] = await Promise.all([
-        getForm(id),
-        getFormResponses(id)
-      ])
-      setForm(formData.data)
-      const rData = responsesData.data
-      setResponses(rData.results || rData)
-    } catch (err) {
-      setError('Failed to load analytics data.')
-    } finally {
-      setLoading(false)
-    }
-  }
 
   const questionEntries = useMemo(() => {
     if (!form) return []
@@ -62,50 +49,56 @@ export default function FormAnalytics() {
     [filters, questionById]
   )
 
-  const indexedResponses = useMemo(() => responses.map(response => ({
-    ...response,
-    answersByQuestion: Object.fromEntries(
-      response.answers.map(answer => [String(answer.question), answer])
-    ),
-  })), [responses])
+  const serializedFilters = JSON.stringify(activeFilters)
+  useEffect(() => {
+    if (!form || String(form.id) !== id) return
+    let cancelled = false
+    const controller = new AbortController()
+    setRefreshing(true)
+    setError(null)
+    const timer = setTimeout(() => {
+      getFormAnalytics(id, {
+        filters: serializedFilters,
+        trend: trendMode,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      }, controller.signal)
+        .then(({ data }) => { if (!cancelled) setSummary(data) })
+        .catch(err => {
+          if (!cancelled) setError(err.response?.data?.filters?.[0] || 'Failed to load analytics data.')
+        })
+        .finally(() => { if (!cancelled) setRefreshing(false) })
+    }, 250)
+    return () => { cancelled = true; clearTimeout(timer); controller.abort() }
+  }, [id, form, serializedFilters, trendMode])
 
-  const filteredResponses = useMemo(() => {
-    if (!activeFilters.length) return indexedResponses
+  const trendSeries = (summary?.trend || []).map(item => {
+    const [year, month, day] = item.key.split('-').map(Number)
+    const label = new Date(year, month - 1, day).toLocaleDateString()
+    return { ...item, label: trendMode === 'weekly' ? `Week of ${label}` : label }
+  })
 
-    return indexedResponses.filter(response =>
-      activeFilters.every(filter => {
-        const question = questionById[String(filter.questionId)]
-        if (!question) return true
-        return matchesResponseFilter(response, question, filter)
-      })
-    )
-  }, [indexedResponses, questionById, activeFilters])
-
-  const trendSeries = useMemo(
-    () => buildTrendSeries(filteredResponses, trendMode),
-    [filteredResponses, trendMode]
-  )
-
-  function downloadFilteredCSV(requestedName) {
+  async function downloadFilteredCSV(requestedName) {
     const defaultName = `${sanitizeFilename(form?.title || 'form')}_filtered_analytics`
     const finalName = sanitizeFilename((requestedName || '').trim()) || defaultName
-    const csv = buildAnalyticsCsv(filteredResponses, questionEntries, form.sections.length > 1)
-
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-    const url = window.URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.setAttribute('download', `${finalName}.csv`)
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    window.URL.revokeObjectURL(url)
-    setShowExportModal(false)
-    setExportFileName('')
+    setExporting(true)
+    try {
+      const { data } = await exportFormResponses(id, { filters: serializedFilters, section_titles: 'true' })
+      const url = window.URL.createObjectURL(data)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${finalName}.csv`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+      setShowExportModal(false)
+      setExportFileName('')
+    } catch { setError('Failed to export CSV.') }
+    finally { setExporting(false) }
   }
 
   function handleExportFilteredCSV() {
-    if (!filteredResponses.length) return
+    if (!summary.count) return
     setExportFileName('')
     setShowExportModal(true)
   }
@@ -153,7 +146,7 @@ export default function FormAnalytics() {
   }
 
   if (loading) return <div className="loading"><div className="spinner" /></div>
-  if (error) return <div className="empty-state"><h2>{error}</h2></div>
+  if (!form || !summary) return error ? <div role="alert">{error}</div> : <div className="loading"><div className="spinner" /></div>
 
   return (
     <div className="dashboard analytics-page">
@@ -161,12 +154,12 @@ export default function FormAnalytics() {
         <div>
           <h1>Analytics: {form.title}</h1>
           <span className="form-count">
-            {filteredResponses.length} response{filteredResponses.length !== 1 ? 's' : ''}
-            {activeFilters.length ? ` (filtered from ${responses.length})` : ' total'}
+            {summary.count} response{summary.count !== 1 ? 's' : ''}
+            {activeFilters.length ? ` (filtered from ${summary.total_count})` : ' total'}
           </span>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
-          <button className="btn btn-primary" onClick={handleExportFilteredCSV} disabled={!filteredResponses.length}>
+          <button className="btn btn-primary" onClick={handleExportFilteredCSV} disabled={!summary.count || refreshing || exporting || !!error}>
             ⬇ Export Filtered CSV
           </button>
           <Link to={`/forms/${id}/responses`} className="btn btn-secondary">
@@ -178,8 +171,10 @@ export default function FormAnalytics() {
         </div>
       </div>
 
-      <div className="analytics-kpis">
-        <KpiCard title="Total Responses" value={filteredResponses.length} />
+      {error && <p role="alert">{error}</p>}
+      {refreshing && <p role="status">Updating analytics…</p>}
+      <div className="analytics-kpis" aria-busy={refreshing}>
+        <KpiCard title="Total Responses" value={summary.count} />
         <KpiCard title="Questions" value={questionEntries.length} />
         <KpiCard title="Sections" value={form.sections.length} />
       </div>
@@ -188,7 +183,7 @@ export default function FormAnalytics() {
         <div className="analytics-card-header">
           <h2>Filter Responses by Answers</h2>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button className="btn btn-secondary" onClick={addFilter}>
+            <button className="btn btn-secondary" onClick={addFilter} disabled={filters.length >= 20}>
               + Add Filter
             </button>
             {activeFilters.length > 0 && (
@@ -332,21 +327,7 @@ export default function FormAnalytics() {
         <TrendChart series={trendSeries} />
       </div>
 
-      <div className="summary-view">
-        {form.sections.map(section => (
-          <div key={section.id}>
-            {form.sections.length > 1 && <h2 style={{ marginBottom: '16px' }}>{section.title}</h2>}
-
-            {section.questions.map(question => (
-              <QuestionAnalytics
-                key={question.id}
-                question={question}
-                responses={filteredResponses}
-              />
-            ))}
-          </div>
-        ))}
-      </div>
+      <ResponseSummary form={form} summary={summary} showKeywords />
 
       {showExportModal && (
         <div className="confirm-overlay" onClick={() => setShowExportModal(false)}>
@@ -371,10 +352,10 @@ export default function FormAnalytics() {
                 <button type="button" className="btn btn-secondary" onClick={() => setShowExportModal(false)}>
                   Cancel
                 </button>
-                <button type="button" className="btn btn-secondary" onClick={() => downloadFilteredCSV('')}>
+                <button type="button" className="btn btn-secondary" disabled={exporting || refreshing} onClick={() => downloadFilteredCSV('')}>
                   Leave Blank
                 </button>
-                <button type="submit" className="btn btn-primary">
+                <button type="submit" className="btn btn-primary" disabled={exporting || refreshing}>
                   Export CSV
                 </button>
               </div>
@@ -416,44 +397,6 @@ function isFilterActive(filter, question) {
   return (filter.textQuery || '').trim().length > 0
 }
 
-function matchesResponseFilter(response, question, filter) {
-  const answer = response.answersByQuestion[String(question.id)]
-
-  if (question.question_type === 'multiple_choice' || question.question_type === 'multiple_select') {
-    if (!filter.choiceId) return true
-    const selectedChoices = Array.isArray(answer?.selected_choices) ? answer.selected_choices : []
-    return selectedChoices.some(choiceId => String(choiceId) === String(filter.choiceId))
-  }
-
-  if (question.question_type === 'media') {
-    if (!filter.mediaMode) return true
-    const hasFile = Boolean(answer?.file_answer)
-    return filter.mediaMode === 'with_file' ? hasFile : !hasFile
-  }
-
-  if (question.question_type === 'number' || question.question_type === 'float') {
-    const numericValue = (filter.numericValue || '').trim()
-    if (!numericValue) return true
-    const answerNum = parseFloat(answer?.text_answer)
-    const filterNum = parseFloat(numericValue)
-    if (isNaN(answerNum) || isNaN(filterNum)) return false
-    switch (filter.numericOperator) {
-      case '=':  return answerNum === filterNum
-      case '!=': return answerNum !== filterNum
-      case '>':  return answerNum > filterNum
-      case '>=': return answerNum >= filterNum
-      case '<':  return answerNum < filterNum
-      case '<=': return answerNum <= filterNum
-      default:   return true
-    }
-  }
-
-  const query = (filter.textQuery || '').trim().toLowerCase()
-  if (!query) return true
-  const text = (answer?.text_answer || '').toLowerCase()
-  return text.includes(query)
-}
-
 function KpiCard({ title, value }) {
   return (
     <div className="summary-card analytics-kpi-card">
@@ -491,246 +434,6 @@ function TrendChart({ series }) {
       })}
     </div>
   )
-}
-
-function QuestionAnalytics({ question, responses }) {
-  const answers = responses
-    .map(response => response.answersByQuestion[String(question.id)])
-    .filter(Boolean)
-
-  return (
-    <div className="summary-card">
-      <div className="summary-question">{question.text}</div>
-      <div className="summary-stats">
-        {(question.question_type === 'multiple_choice' || question.question_type === 'multiple_select') ? (
-          <ChoiceAnalytics question={question} answers={answers} responses={responses} />
-        ) : question.question_type === 'media' ? (
-          <MediaAnalytics answers={answers} />
-        ) : (
-          <TextAnalytics answers={answers} />
-        )}
-      </div>
-    </div>
-  )
-}
-
-function ChoiceAnalytics({ question, answers, responses }) {
-  const counts = {}
-  question.choices.forEach(choice => {
-    counts[choice.id] = 0
-  })
-
-  answers.forEach(answer => {
-    const selectedChoices = Array.isArray(answer.selected_choices) ? answer.selected_choices : []
-    selectedChoices.forEach(choiceId => {
-      counts[choiceId] = (counts[choiceId] || 0) + 1
-    })
-  })
-
-  const answeredResponses = answers.filter(
-    answer => Array.isArray(answer.selected_choices) && answer.selected_choices.length > 0
-  ).length
-
-  return (
-    <div>
-      {question.choices.map(choice => {
-        const count = counts[choice.id] || 0
-        const denominator = question.question_type === 'multiple_select' ? responses.length : Math.max(answeredResponses, 1)
-        const percent = denominator > 0 ? Math.round((count / denominator) * 100) : 0
-
-        return (
-          <div key={choice.id} className="chart-row">
-            <div className="chart-label" title={choice.text}>{choice.text}</div>
-            <div className="chart-bar-container">
-              <div className="chart-bar-fill" style={{ width: `${percent}%` }} />
-            </div>
-            <div className="chart-count">{percent}%</div>
-          </div>
-        )
-      })}
-      <div className="analytics-footnote">
-        {question.question_type === 'multiple_select'
-          ? `Selection frequency across ${responses.length} response${responses.length !== 1 ? 's' : ''}`
-          : `${answeredResponses} answered response${answeredResponses !== 1 ? 's' : ''}`}
-      </div>
-    </div>
-  )
-}
-
-function MediaAnalytics({ answers }) {
-  const uploadCount = answers.filter(answer => Boolean(answer.file_answer)).length
-
-  return (
-    <div>
-      <div className="analytics-kpi-value" style={{ fontSize: '1.8rem' }}>{uploadCount}</div>
-      <div className="analytics-footnote">
-        file{uploadCount !== 1 ? 's' : ''} uploaded
-      </div>
-    </div>
-  )
-}
-
-function TextAnalytics({ answers }) {
-  const textValues = answers
-    .map(answer => (answer.text_answer || '').trim())
-    .filter(Boolean)
-
-  if (!textValues.length) {
-    return (
-      <div className="analytics-footnote">
-        No text responses yet.
-      </div>
-    )
-  }
-
-  const groupedAnswers = {}
-  textValues.forEach(text => {
-    groupedAnswers[text] = (groupedAnswers[text] || 0) + 1
-  })
-
-  const topAnswers = Object.entries(groupedAnswers)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-
-  const keywordCounts = extractKeywords(textValues)
-
-  return (
-    <div className="analytics-text-grid">
-      <div>
-        <div className="analytics-subtitle">Top responses</div>
-        {topAnswers.map(([text, count]) => (
-          <div key={text} className="chart-row">
-            <div className="chart-label analytics-text-label" title={text}>
-              {text}
-            </div>
-            <div className="chart-count">{count}</div>
-          </div>
-        ))}
-      </div>
-
-      <div>
-        <div className="analytics-subtitle">Top keywords</div>
-        {keywordCounts.length === 0 ? (
-          <div className="analytics-footnote">No strong keywords found.</div>
-        ) : (
-          keywordCounts.slice(0, 8).map(([keyword, count]) => (
-            <div key={keyword} className="chart-row">
-              <div className="chart-label analytics-text-label">{keyword}</div>
-              <div className="chart-count">{count}</div>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  )
-}
-
-function extractKeywords(textValues) {
-  const tokenCounts = {}
-
-  textValues.forEach(text => {
-    text
-      .toLowerCase()
-      .split(/[^a-z0-9]+/)
-      .filter(token => token.length >= 4)
-      .filter(token => !COMMON_STOPWORDS.has(token))
-      .forEach(token => {
-        tokenCounts[token] = (tokenCounts[token] || 0) + 1
-      })
-  })
-
-  return Object.entries(tokenCounts).sort((a, b) => b[1] - a[1])
-}
-
-function buildTrendSeries(responses, trendMode) {
-  const grouped = {}
-
-  responses.forEach(response => {
-    const createdAt = new Date(response.created_at)
-    if (Number.isNaN(createdAt.getTime())) return
-
-    if (trendMode === 'weekly') {
-      const weekStart = getWeekStart(createdAt)
-      const key = weekStart.toISOString().slice(0, 10)
-      grouped[key] = (grouped[key] || 0) + 1
-      return
-    }
-
-    const dayKey = createdAt.toISOString().slice(0, 10)
-    grouped[dayKey] = (grouped[dayKey] || 0) + 1
-  })
-
-  return Object.entries(grouped)
-    .sort((a, b) => new Date(a[0]) - new Date(b[0]))
-    .map(([key, count]) => {
-      const date = new Date(key)
-      return {
-        key,
-        count,
-        label: trendMode === 'weekly'
-          ? `Week of ${date.toLocaleDateString()}`
-          : date.toLocaleDateString()
-      }
-    })
-}
-
-function getWeekStart(date) {
-  const copy = new Date(date)
-  const day = copy.getDay()
-  copy.setHours(0, 0, 0, 0)
-  copy.setDate(copy.getDate() - day)
-  return copy
-}
-
-function buildAnalyticsCsv(responses, questionEntries, includeSectionTitle) {
-  const headers = ['Submitted At', ...questionEntries.map(({ section, question }) => (
-    includeSectionTitle ? `${section.title} - ${question.text}` : question.text
-  ))]
-
-  const rows = responses.map(response => {
-    const cells = [new Date(response.created_at).toLocaleString()]
-
-    questionEntries.forEach(({ question }) => {
-      const answer = response.answersByQuestion[String(question.id)]
-      cells.push(formatCsvAnswer(answer, question))
-    })
-
-    return cells
-  })
-
-  return [headers, ...rows]
-    .map(row => row.map(escapeCsvValue).join(','))
-    .join('\n')
-}
-
-function formatCsvAnswer(answer, question) {
-  if (!answer) return ''
-
-  if (question.question_type === 'multiple_choice' || question.question_type === 'multiple_select') {
-    const selectedChoices = Array.isArray(answer.selected_choices) ? answer.selected_choices : []
-    if (!selectedChoices.length) return ''
-
-    const choiceTextById = {}
-    question.choices.forEach(choice => {
-      choiceTextById[String(choice.id)] = choice.text
-    })
-
-    return selectedChoices
-      .map(choiceId => choiceTextById[String(choiceId)] || String(choiceId))
-      .join(' | ')
-  }
-
-  if (question.question_type === 'media') {
-    return answer.file_answer || ''
-  }
-
-  return answer.text_answer || ''
-}
-
-function escapeCsvValue(value) {
-  const safeValue = String(value ?? '')
-  const escaped = safeValue.replace(/"/g, '""')
-  return `"${escaped}"`
 }
 
 function sanitizeFilename(value) {

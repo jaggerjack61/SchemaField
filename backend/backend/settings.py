@@ -134,6 +134,9 @@ MEDIA_ROOT = BASE_DIR / 'media'
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10 MB
 FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10 MB
 
+# Give newly uploaded, not-yet-saved question media a full day before cleanup.
+ORPHAN_UPLOAD_GRACE_SECONDS = 24 * 60 * 60
+
 # --- Frontend base URL (used for QR codes, etc.) ---
 FRONTEND_BASE_URL = os.environ.get('FRONTEND_BASE_URL', 'http://localhost:5173')
 

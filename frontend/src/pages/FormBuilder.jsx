@@ -59,7 +59,8 @@ export default function FormBuilder() {
     try {
       const payload = serializeFormPayload(form)
       if (isEdit) {
-        await updateForm(id, payload)
+        const { data } = await updateForm(id, payload)
+        setForm({ ...data, deadline: formatDateTimeInputValue(data.deadline) })
         showToast('Form updated!', 'success')
       } else {
         const { data } = await createForm(payload)
@@ -68,7 +69,8 @@ export default function FormBuilder() {
       }
     } catch (err) {
       console.error(err)
-      const msg = err.response?.data?.detail || 'Failed to save form'
+      const errors = err.response?.data
+      const msg = errors?.detail || (errors ? Object.values(errors).flat().map(value => typeof value === 'string' ? value : JSON.stringify(value)).join(' ') : 'Failed to save form')
       showToast(msg, 'error')
     } finally {
       setSaving(false)
@@ -284,6 +286,7 @@ export default function FormBuilder() {
 
   return (
     <div className="builder-container">
+      <fieldset disabled={saving} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
       {/* Form title & description */}
       <div className="builder-header">
         <input
@@ -380,6 +383,7 @@ export default function FormBuilder() {
         ))}
       </div>
 
+      </fieldset>
       {/* Share Modal */}
       {shareForm && (
         <div className="share-modal-overlay" onClick={() => setShareForm(null)}>
