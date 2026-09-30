@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import { CircleAlert, Download, Filter, Layers, ListChecks, MessageSquare, Pencil, Plus, TrendingUp, X } from 'lucide-react'
 import { getForm, getFormAnalytics, exportFormResponses } from '../api'
 import ResponseSummary from '../components/ResponseSummary'
+import PageHeader from '../components/PageHeader'
+import EmptyState from '../components/EmptyState'
+import Modal from '../components/Modal'
 
 export default function FormAnalytics() {
   const { id } = useParams()
@@ -61,6 +65,7 @@ export default function FormAnalytics() {
         filters: serializedFilters,
         trend: trendMode,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        keywords: 1,
       }, controller.signal)
         .then(({ data }) => { if (!cancelled) setSummary(data) })
         .catch(err => {
@@ -146,222 +151,270 @@ export default function FormAnalytics() {
   }
 
   if (loading) return <div className="loading"><div className="spinner" /></div>
-  if (!form || !summary) return error ? <div role="alert">{error}</div> : <div className="loading"><div className="spinner" /></div>
+  if (!form || !summary) {
+    return error
+      ? <div className="alert alert-danger" role="alert"><CircleAlert aria-hidden="true" />{error}</div>
+      : <div className="loading"><div className="spinner" /></div>
+  }
 
   return (
-    <div className="dashboard analytics-page">
-      <div className="dashboard-header">
-        <div>
-          <h1>Analytics: {form.title}</h1>
-          <span className="form-count">
+    <div className="analytics-page">
+      <PageHeader
+        back={{ to: `/forms/${id}/responses`, label: 'Responses' }}
+        title={form.title}
+        subtitle={
+          <>
             {summary.count} response{summary.count !== 1 ? 's' : ''}
             {activeFilters.length ? ` (filtered from ${summary.total_count})` : ' total'}
-          </span>
-        </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button className="btn btn-primary" onClick={handleExportFilteredCSV} disabled={!summary.count || refreshing || exporting || !!error}>
-            ⬇ Export Filtered CSV
-          </button>
-          <Link to={`/forms/${id}/responses`} className="btn btn-secondary">
-            ← Back to Responses
-          </Link>
-          <Link to={`/forms/${id}/edit`} className="btn btn-secondary">
-            Edit Form
-          </Link>
-        </div>
-      </div>
-
-      {error && <p role="alert">{error}</p>}
-      {refreshing && <p role="status">Updating analytics…</p>}
-      <div className="analytics-kpis" aria-busy={refreshing}>
-        <KpiCard title="Total Responses" value={summary.count} />
-        <KpiCard title="Questions" value={questionEntries.length} />
-        <KpiCard title="Sections" value={form.sections.length} />
-      </div>
-
-      <div className="summary-card">
-        <div className="analytics-card-header">
-          <h2>Filter Responses by Answers</h2>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button className="btn btn-secondary" onClick={addFilter} disabled={filters.length >= 20}>
-              + Add Filter
-            </button>
-            {activeFilters.length > 0 && (
-              <button className="btn btn-secondary" onClick={clearFilter}>
-                Clear Filters
-              </button>
+          </>
+        }
+        actions={
+          <>
+            {refreshing && (
+              <span className="inline-status" role="status"><span className="spinner" /> Updating…</span>
             )}
+            <Link to={`/forms/${id}/edit`} className="btn btn-ghost">
+              <Pencil aria-hidden="true" /> Edit form
+            </Link>
+            <button className="btn btn-primary" onClick={handleExportFilteredCSV} disabled={!summary.count || refreshing || exporting || !!error}>
+              <Download aria-hidden="true" /> {activeFilters.length ? 'Export filtered CSV' : 'Export CSV'}
+            </button>
+          </>
+        }
+      />
+
+      {error && (
+        <div className="alert alert-danger" role="alert">
+          <CircleAlert aria-hidden="true" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      <div className="stat-grid" aria-busy={refreshing}>
+        <KpiCard icon={MessageSquare} title={activeFilters.length ? 'Matching responses' : 'Total responses'} value={summary.count} />
+        <KpiCard icon={ListChecks} title="Questions" value={questionEntries.length} />
+        <KpiCard icon={Layers} title="Sections" value={form.sections.length} />
+      </div>
+
+      <div className="card">
+        <div className="card-header">
+          <div>
+            <h2 className="card-title">Filters</h2>
+            <p className="card-description">
+              {activeFilters.length > 0
+                ? `${activeFilters.length} active filter${activeFilters.length !== 1 ? 's' : ''}. AND requires both conditions; OR allows either. AND groups are evaluated first.`
+                : 'Narrow the analysis to responses with specific answers.'}
+            </p>
           </div>
+          {activeFilters.length > 0 && (
+            <button className="btn btn-ghost btn-sm" onClick={clearFilter}>
+              Clear all
+            </button>
+          )}
         </div>
 
-        <div className="analytics-filter-list">
+        <div className="card-body analytics-filter-list">
           {filters.map((filter, index) => {
             const selectedFilterQuestion = questionById[String(filter.questionId)] || null
+            const type = selectedFilterQuestion?.question_type
+            const fieldId = `filter-${filter.id}`
 
             return (
               <div key={filter.id} className="analytics-filter-row">
-                <div className="analytics-filter-field">
-                  <label>Question {index + 1}</label>
+                {index === 0 ? (
+                  <span className="analytics-filter-index" aria-hidden="true"><Filter size={14} /></span>
+                ) : (
                   <select
-                    value={filter.questionId}
-                    onChange={(event) => handleFilterQuestionChange(filter.id, event.target.value)}
+                    className="select analytics-filter-index analytics-filter-conjunction"
+                    aria-label={`Filter ${index + 1} connection`}
+                    value={filter.conjunction}
+                    onChange={event => updateFilter(filter.id, { conjunction: event.target.value })}
                   >
-                    <option value="">Select question</option>
-                    {questionEntries.map(({ section, question }) => (
-                      <option key={question.id} value={question.id}>
-                        {form.sections.length > 1 ? `${section.title} · ` : ''}{question.text}
-                      </option>
-                    ))}
+                    <option value="and">AND</option>
+                    <option value="or">OR</option>
                   </select>
-                </div>
-
-                {selectedFilterQuestion && (selectedFilterQuestion.question_type === 'multiple_choice' || selectedFilterQuestion.question_type === 'multiple_select') && (
-                  <div className="analytics-filter-field">
-                    <label>Answer Option</label>
+                )}
+                <div className="analytics-filter-fields">
+                  <div className="field analytics-filter-question">
+                    <label className="sr-only" htmlFor={`${fieldId}-question`}>Question {index + 1}</label>
                     <select
-                      value={filter.choiceId}
-                      onChange={(event) => updateFilter(filter.id, { choiceId: event.target.value })}
+                      id={`${fieldId}-question`}
+                      className="select"
+                      value={filter.questionId}
+                      onChange={(event) => handleFilterQuestionChange(filter.id, event.target.value)}
                     >
-                      <option value="">Any option</option>
-                      {selectedFilterQuestion.choices.map(choice => (
-                        <option key={choice.id} value={choice.id}>{choice.text}</option>
+                      <option value="">Select a question…</option>
+                      {questionEntries.map(({ section, question }) => (
+                        <option key={question.id} value={question.id}>
+                          {form.sections.length > 1 ? `${section.title} · ` : ''}{question.text}
+                        </option>
                       ))}
                     </select>
                   </div>
-                )}
 
-                {selectedFilterQuestion && selectedFilterQuestion.question_type === 'media' && (
-                  <div className="analytics-filter-field">
-                    <label>Upload Status</label>
-                    <select
-                      value={filter.mediaMode}
-                      onChange={(event) => updateFilter(filter.id, { mediaMode: event.target.value })}
-                    >
-                      <option value="">Any</option>
-                      <option value="with_file">Has uploaded file</option>
-                      <option value="without_file">No uploaded file</option>
-                    </select>
-                  </div>
-                )}
-
-                {selectedFilterQuestion && (selectedFilterQuestion.question_type === 'number' || selectedFilterQuestion.question_type === 'float') && (
-                  <>
-                    <div className="analytics-filter-field">
-                      <label>Operator</label>
+                  {(type === 'multiple_choice' || type === 'multiple_select') && (
+                    <div className="field">
+                      <label className="sr-only" htmlFor={`${fieldId}-choice`}>Answer option</label>
                       <select
+                        id={`${fieldId}-choice`}
+                        className="select"
+                        value={filter.choiceId}
+                        onChange={(event) => updateFilter(filter.id, { choiceId: event.target.value })}
+                      >
+                        <option value="">Any option</option>
+                        {selectedFilterQuestion.choices.map(choice => (
+                          <option key={choice.id} value={choice.id}>{choice.text}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {type === 'media' && (
+                    <div className="field">
+                      <label className="sr-only" htmlFor={`${fieldId}-media`}>Upload status</label>
+                      <select
+                        id={`${fieldId}-media`}
+                        className="select"
+                        value={filter.mediaMode}
+                        onChange={(event) => updateFilter(filter.id, { mediaMode: event.target.value })}
+                      >
+                        <option value="">Any upload status</option>
+                        <option value="with_file">Has uploaded file</option>
+                        <option value="without_file">No uploaded file</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {(type === 'number' || type === 'float') && (
+                    <div className="analytics-filter-numeric">
+                      <label className="sr-only" htmlFor={`${fieldId}-op`}>Operator</label>
+                      <select
+                        id={`${fieldId}-op`}
+                        className="select analytics-operator"
                         value={filter.numericOperator}
                         onChange={(event) => updateFilter(filter.id, { numericOperator: event.target.value })}
                       >
-                        <option value="=">= (equals)</option>
-                        <option value="!=">!= (not equal)</option>
-                        <option value=">">&gt; (greater than)</option>
-                        <option value=">=">&gt;= (at least)</option>
-                        <option value="<">&lt; (less than)</option>
-                        <option value="<=">&lt;= (at most)</option>
+                        <option value="=">equals</option>
+                        <option value="!=">does not equal</option>
+                        <option value=">">greater than</option>
+                        <option value=">=">at least</option>
+                        <option value="<">less than</option>
+                        <option value="<=">at most</option>
                       </select>
-                    </div>
-                    <div className="analytics-filter-field">
-                      <label>Value</label>
+                      <label className="sr-only" htmlFor={`${fieldId}-value`}>Value</label>
                       <input
+                        id={`${fieldId}-value`}
+                        className="input"
                         type="number"
-                        step={selectedFilterQuestion.question_type === 'float' ? 'any' : '1'}
+                        step={type === 'float' ? 'any' : '1'}
                         value={filter.numericValue}
-                        placeholder="Enter number"
+                        placeholder="Value"
                         onChange={(event) => updateFilter(filter.id, { numericValue: event.target.value })}
                       />
                     </div>
-                  </>
-                )}
+                  )}
 
-                {selectedFilterQuestion && selectedFilterQuestion.question_type !== 'multiple_choice' && selectedFilterQuestion.question_type !== 'multiple_select' && selectedFilterQuestion.question_type !== 'media' && selectedFilterQuestion.question_type !== 'number' && selectedFilterQuestion.question_type !== 'float' && (
-                  <div className="analytics-filter-field">
-                    <label>Text Contains</label>
-                    <input
-                      type="text"
-                      value={filter.textQuery}
-                      placeholder="Type keyword or phrase"
-                      onChange={(event) => updateFilter(filter.id, { textQuery: event.target.value })}
-                    />
-                  </div>
-                )}
-
-                <div className="analytics-filter-actions">
-                  <button
-                    className="btn btn-secondary"
-                    onClick={() => removeFilter(filter.id)}
-                    disabled={filters.length === 1}
-                  >
-                    Remove
-                  </button>
+                  {selectedFilterQuestion && (type === 'short_text' || type === 'long_text') && (
+                    <div className="field">
+                      <label className="sr-only" htmlFor={`${fieldId}-text`}>Text contains</label>
+                      <input
+                        id={`${fieldId}-text`}
+                        className="input"
+                        type="text"
+                        value={filter.textQuery}
+                        placeholder="Type keyword or phrase"
+                        onChange={(event) => updateFilter(filter.id, { textQuery: event.target.value })}
+                      />
+                    </div>
+                  )}
                 </div>
+
+                <button
+                  className="btn btn-ghost btn-sm btn-icon"
+                  onClick={() => removeFilter(filter.id)}
+                  disabled={filters.length === 1 && !filter.questionId}
+                  aria-label={`Remove filter ${index + 1}`}
+                  title="Remove filter"
+                >
+                  <X aria-hidden="true" />
+                </button>
               </div>
             )
           })}
-        </div>
 
-        <div className="analytics-footnote" style={{ marginTop: '10px' }}>
-          {activeFilters.length > 0
-            ? `${activeFilters.length} active filter${activeFilters.length !== 1 ? 's' : ''} (AND logic)`
-            : 'Select question-specific criteria to filter responses.'}
+          <button className="btn btn-ghost btn-sm analytics-add-filter" onClick={addFilter} disabled={filters.length >= 20}>
+            <Plus aria-hidden="true" /> Add filter
+          </button>
         </div>
       </div>
 
-      <div className="summary-card">
-        <div className="analytics-card-header">
-          <h2>Response Trends</h2>
-          <div className="tabs" style={{ marginBottom: 0, borderBottom: 'none', gap: '12px' }}>
+      <div className="card">
+        <div className="card-header">
+          <div>
+            <h2 className="card-title">Responses over time</h2>
+            <p className="card-description">
+              {trendMode === 'weekly' ? 'Responses per week' : 'Responses per day'}
+              {activeFilters.length ? ', matching the filters above' : ''}
+            </p>
+          </div>
+          <div className="segmented" role="group" aria-label="Trend interval">
             <button
-              className={`tab-btn ${trendMode === 'daily' ? 'active' : ''}`}
+              className={trendMode === 'daily' ? 'active' : ''}
+              aria-pressed={trendMode === 'daily'}
               onClick={() => setTrendMode('daily')}
             >
               Daily
             </button>
             <button
-              className={`tab-btn ${trendMode === 'weekly' ? 'active' : ''}`}
+              className={trendMode === 'weekly' ? 'active' : ''}
+              aria-pressed={trendMode === 'weekly'}
               onClick={() => setTrendMode('weekly')}
             >
               Weekly
             </button>
           </div>
         </div>
-        <TrendChart series={trendSeries} />
+        <div className="card-body">
+          <TrendChart series={trendSeries} />
+        </div>
       </div>
 
       <ResponseSummary form={form} summary={summary} showKeywords />
 
       {showExportModal && (
-        <div className="confirm-overlay" onClick={() => setShowExportModal(false)}>
-          <div className="confirm-dialog analytics-export-modal" onClick={(event) => event.stopPropagation()}>
-            <h3>Export Filtered CSV</h3>
-            <p>Enter a file name, or leave it blank to use the default.</p>
-
-            <form className="analytics-export-form" onSubmit={handleExportModalSubmit}>
-              <div className="analytics-export-field">
-                <label htmlFor="analyticsExportFilename">File name (optional)</label>
-                <input
-                  id="analyticsExportFilename"
-                  type="text"
-                  value={exportFileName}
-                  placeholder="Leave blank to use default"
-                  onChange={(event) => setExportFileName(event.target.value)}
-                  autoFocus
-                />
-              </div>
-
-              <div className="confirm-actions">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowExportModal(false)}>
-                  Cancel
-                </button>
-                <button type="button" className="btn btn-secondary" disabled={exporting || refreshing} onClick={() => downloadFilteredCSV('')}>
-                  Leave Blank
-                </button>
-                <button type="submit" className="btn btn-primary" disabled={exporting || refreshing}>
-                  Export CSV
-                </button>
-              </div>
-            </form>
+        <Modal
+          title={activeFilters.length ? 'Export filtered CSV' : 'Export CSV'}
+          description={activeFilters.length
+            ? `Downloads the ${summary.count} response${summary.count !== 1 ? 's' : ''} that match your filters.`
+            : `Downloads all ${summary.count} response${summary.count !== 1 ? 's' : ''}.`}
+          icon={<Download />}
+          onClose={() => setShowExportModal(false)}
+          onSubmit={handleExportModalSubmit}
+          footer={
+            <>
+              <button type="button" className="btn btn-secondary" onClick={() => setShowExportModal(false)}>
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={exporting || refreshing}>
+                {exporting ? 'Exporting…' : 'Export CSV'}
+              </button>
+            </>
+          }
+        >
+          <div className="field">
+            <label className="field-label" htmlFor="analyticsExportFilename">File name</label>
+            <input
+              id="analyticsExportFilename"
+              className="input"
+              type="text"
+              value={exportFileName}
+              placeholder={`${sanitizeFilename(form.title || 'form')}_filtered_analytics`}
+              onChange={(event) => setExportFileName(event.target.value)}
+              autoFocus
+            />
+            <span className="field-hint">Optional. Leave blank to use the default name; “.csv” is added for you.</span>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   )
@@ -370,6 +423,7 @@ export default function FormAnalytics() {
 function createEmptyFilter(id) {
   return {
     id,
+    conjunction: 'and',
     questionId: '',
     choiceId: '',
     textQuery: '',
@@ -397,42 +451,99 @@ function isFilterActive(filter, question) {
   return (filter.textQuery || '').trim().length > 0
 }
 
-function KpiCard({ title, value }) {
+function KpiCard({ icon: Icon, title, value }) {
   return (
-    <div className="summary-card analytics-kpi-card">
-      <div className="analytics-kpi-title">{title}</div>
-      <div className="analytics-kpi-value">{value}</div>
+    <div className="card stat-card">
+      <div className="stat-card-top">
+        <span>{title}</span>
+        <span className="stat-card-icon"><Icon aria-hidden="true" /></span>
+      </div>
+      <div className="stat-card-value">{value.toLocaleString()}</div>
     </div>
   )
 }
 
+// Round the axis maximum up to a clean 1/2/5 step so gridlines land on tidy numbers.
+function niceTicks(max) {
+  if (max <= 4) return Array.from({ length: Math.max(max, 1) + 1 }, (_, i) => i)
+  const rough = max / 4
+  const magnitude = 10 ** Math.floor(Math.log10(rough))
+  const step = [1, 2, 5, 10].map(m => m * magnitude).find(candidate => candidate >= rough)
+  const top = Math.ceil(max / step) * step
+  return Array.from({ length: top / step + 1 }, (_, i) => i * step)
+}
+
 function TrendChart({ series }) {
+  const [hovered, setHovered] = useState(null)
+
   if (!series.length) {
     return (
-      <div className="empty-state" style={{ padding: '24px 12px' }}>
-        <p>No responses available for trend analysis.</p>
-      </div>
+      <EmptyState
+        icon={TrendingUp}
+        title="No trend data yet"
+        description="Once responses arrive, their timing will appear here."
+      />
     )
   }
 
-  const maxCount = Math.max(...series.map(item => item.count), 1)
+  const ticks = niceTicks(Math.max(...series.map(item => item.count)))
+  const top = ticks[ticks.length - 1] || 1
+  // Label a handful of evenly spaced dates rather than every column.
+  const labelEvery = Math.max(1, Math.ceil(series.length / 6))
+  const total = series.reduce((sum, item) => sum + item.count, 0)
+  const peak = series.reduce((best, item) => (item.count > best.count ? item : best), series[0])
+  const active = hovered != null ? series[hovered] : null
 
   return (
-    <div>
-      {series.map(item => {
-        const widthPercent = Math.round((item.count / maxCount) * 100)
-
-        return (
-          <div key={item.key} className="chart-row">
-            <div className="chart-label" title={item.label}>{item.label}</div>
-            <div className="chart-bar-container">
-              <div className="chart-bar-fill" style={{ width: `${widthPercent}%` }} />
+    <figure className="trend-chart">
+      <div
+        className="trend-plot"
+        role="img"
+        aria-label={`${total} responses across ${series.length} ${series.length === 1 ? 'period' : 'periods'}; peak of ${peak.count} on ${peak.label}.`}
+        onMouseLeave={() => setHovered(null)}
+      >
+        <div className="trend-grid" aria-hidden="true">
+          {ticks.slice().reverse().map(tick => (
+            <div className="trend-gridline" key={tick}><span>{tick.toLocaleString()}</span></div>
+          ))}
+        </div>
+        <div className="trend-columns">
+          {series.map((item, i) => (
+            <div
+              key={item.key}
+              className={`trend-col ${hovered === i ? 'is-active' : ''}`}
+              onMouseEnter={() => setHovered(i)}
+            >
+              <div className="trend-bar" style={{ height: `${(item.count / top) * 100}%` }} />
             </div>
-            <div className="chart-count">{item.count}</div>
+          ))}
+        </div>
+        {active && (
+          <div
+            className="trend-tooltip"
+            style={{ left: `${((hovered + 0.5) / series.length) * 100}%` }}
+            aria-hidden="true"
+          >
+            <strong>{active.count.toLocaleString()} response{active.count !== 1 ? 's' : ''}</strong>
+            <span>{active.label}</span>
           </div>
-        )
-      })}
-    </div>
+        )}
+      </div>
+      <div className="trend-axis" aria-hidden="true">
+        {series.map((item, i) => (
+          <span key={item.key}>{i % labelEvery === 0 ? item.label.replace('Week of ', '') : ''}</span>
+        ))}
+      </div>
+      <table className="sr-only">
+        <caption>Responses per period</caption>
+        <thead><tr><th scope="col">Period</th><th scope="col">Responses</th></tr></thead>
+        <tbody>
+          {series.map(item => (
+            <tr key={item.key}><td>{item.label}</td><td>{item.count}</td></tr>
+          ))}
+        </tbody>
+      </table>
+    </figure>
   )
 }
 

@@ -1,5 +1,6 @@
 .env
 .env.*
+!.env.example
 *.sqlite3
 .DS_Store
 .playwright-mcp/

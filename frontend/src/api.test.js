@@ -21,7 +21,7 @@ vi.mock('axios', () => ({
   },
 }))
 
-import { getForms, getFormResponses, getFileManagerBrowser } from './api'
+import { getUsers, getFormResponses, getFileManagerBrowser } from './api'
 
 describe('paginated API loading', () => {
   beforeEach(() => {
@@ -43,32 +43,19 @@ describe('paginated API loading', () => {
     expect(getMock).toHaveBeenCalledWith('/users/file-manager/browser/', { params: { path: 'uploads', page: 3 } })
   })
 
-  it('follows every page and returns one combined result set', async () => {
-    getMock
-      .mockResolvedValueOnce({
-        data: {
-          count: 3,
-          next: 'http://localhost/api/forms/?page=2&page_size=100',
-          previous: null,
-          results: [{ id: 1 }, { id: 2 }],
-        },
-      })
-      .mockResolvedValueOnce({
-        data: {
-          count: 3,
-          next: null,
-          previous: 'http://localhost/api/forms/?page=1&page_size=100',
-          results: [{ id: 3 }],
-        },
-      })
-
-    const response = await getForms()
-
-    expect(getMock).toHaveBeenNthCalledWith(1, '/forms/', {
-      params: { page_size: 100 },
+  it('fetches the remaining pages in parallel and returns one combined result set', async () => {
+    getMock.mockImplementation(async (url, config) => {
+      const page = config.params.page || 1
+      const pages = { 1: [{ id: 1 }, { id: 2 }], 2: [{ id: 3 }, { id: 4 }], 3: [{ id: 5 }] }
+      return { data: { count: 5, next: page < 3 ? `http://localhost/api/users/?page=${page + 1}` : null, previous: null, results: pages[page] } }
     })
-    expect(getMock).toHaveBeenNthCalledWith(2, '/forms/?page=2&page_size=100')
-    expect(response.data.results).toEqual([{ id: 1 }, { id: 2 }, { id: 3 }])
+
+    const response = await getUsers('ann')
+
+    expect(getMock).toHaveBeenCalledTimes(3)
+    expect(getMock).toHaveBeenNthCalledWith(1, '/users/', { params: { page_size: 100, search: 'ann' }, signal: undefined })
+    expect(getMock).toHaveBeenCalledWith('/users/', { params: { page_size: 100, search: 'ann', page: 3 }, signal: undefined })
+    expect(response.data.results.map(user => user.id)).toEqual([1, 2, 3, 4, 5])
     expect(response.data.next).toBeNull()
   })
 })

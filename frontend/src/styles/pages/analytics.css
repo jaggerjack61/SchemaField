@@ -4,168 +4,213 @@
 .analytics-page {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
 }
 
-.analytics-kpis {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 16px;
+.analytics-page .page-header {
+  margin-bottom: 8px;
 }
 
-.analytics-kpi-card {
-  margin-bottom: 0;
-  padding: 20px;
+/* Big standalone numbers read better with proportional figures. */
+.analytics-page .stat-card-value {
+  font-variant-numeric: normal;
 }
 
-.analytics-kpi-title {
-  color: var(--text-secondary);
-  font-size: 0.9rem;
-}
-
-.analytics-kpi-value {
-  color: var(--text-primary);
-  font-size: 2rem;
-  font-weight: 700;
-  line-height: 1.1;
-  margin-top: 8px;
-}
-
-.analytics-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-  gap: 12px;
-}
-
-.analytics-card-header h2 {
-  font-size: 1.2rem;
-  margin: 0;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.analytics-card-header > div:last-child {
-  flex-shrink: 0;
-  flex-wrap: nowrap;
-}
-
-.analytics-filter-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px;
-}
-
+/* ---------- Filters ---------- */
 .analytics-filter-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 .analytics-filter-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.analytics-filter-index {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-input);
-}
-
-.analytics-filter-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.analytics-filter-actions {
-  display: flex;
-  align-items: end;
-  justify-content: flex-end;
-}
-
-.analytics-filter-field label {
-  color: var(--text-secondary);
-  font-size: 0.85rem;
-}
-
-.analytics-filter-field select,
-.analytics-filter-field input {
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  font-family: var(--font);
-  font-size: 0.9rem;
-  padding: 10px 12px;
-  outline: none;
-}
-
-.analytics-filter-field select:focus,
-.analytics-filter-field input:focus {
-  border-color: var(--accent);
-}
-
-.analytics-subtitle {
-  color: var(--text-secondary);
-  font-size: 0.85rem;
-  margin-bottom: 10px;
+  place-items: center;
+  width: 72px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: var(--radius-md);
+  background-color: var(--bg-secondary);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.03em;
 }
 
-.analytics-footnote {
-  margin-top: 12px;
-  font-size: 0.85rem;
-  color: var(--text-secondary);
-}
-
-.analytics-text-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 24px;
-}
-
-.analytics-text-label {
-  width: auto;
+.analytics-filter-fields {
   flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
+  gap: 8px;
 }
 
-.analytics-export-modal {
-  max-width: 520px;
+.analytics-filter-conjunction {
+  padding: 0 24px 0 10px;
+  cursor: pointer;
 }
 
-.analytics-export-form {
+.analytics-filter-question {
+  grid-column: span 1;
+}
+
+.analytics-filter-numeric {
+  display: flex;
+  gap: 8px;
+}
+
+.analytics-operator {
+  width: auto;
+  flex-shrink: 0;
+}
+
+.analytics-filter-row > .btn-icon {
+  margin-top: 4px;
+}
+
+.analytics-add-filter {
+  align-self: flex-start;
+  margin-left: 82px;
+}
+
+/* ---------- Trend chart ---------- */
+.trend-chart {
+  --trend-axis-width: 36px;
+  margin: 0;
+}
+
+.trend-plot {
+  position: relative;
+  height: 220px;
+  margin-left: var(--trend-axis-width);
+}
+
+.trend-grid {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  justify-content: space-between;
+  pointer-events: none;
 }
 
-.analytics-export-field {
+.trend-gridline {
+  position: relative;
+  height: 0;
+  border-top: 1px solid var(--border);
+}
+
+.trend-gridline:last-child {
+  border-top-color: var(--border-strong);
+}
+
+.trend-gridline span {
+  position: absolute;
+  right: calc(100% + 8px);
+  top: -8px;
+  font-size: var(--text-xs);
+  line-height: 16px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.trend-columns {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.trend-col {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  min-width: 0;
+  cursor: default;
+}
+
+.trend-col.is-active {
+  background: var(--bg-secondary);
+  border-radius: 4px 4px 0 0;
+}
+
+.trend-bar {
+  width: 100%;
+  max-width: 24px;
+  border-radius: 4px 4px 0 0;
+  background: var(--accent);
+  transition: height 0.35s var(--ease), background-color var(--transition);
+}
+
+.trend-col.is-active .trend-bar {
+  background: var(--accent-hover);
+}
+
+.trend-tooltip {
+  position: absolute;
+  top: -8px;
+  transform: translate(-50%, -100%);
+  z-index: 5;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-}
-
-.analytics-export-field label {
-  color: var(--text-secondary);
-  font-size: 0.85rem;
-}
-
-.analytics-export-field input {
-  background: var(--bg-input);
+  gap: 1px;
+  padding: 7px 10px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  font-family: var(--font);
-  font-size: 0.9rem;
-  padding: 10px 12px;
-  outline: none;
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-md);
+  white-space: nowrap;
+  pointer-events: none;
 }
 
-.analytics-export-field input:focus {
-  border-color: var(--accent);
+.trend-tooltip strong {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.trend-tooltip span {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.trend-axis {
+  display: flex;
+  gap: 2px;
+  margin: 8px 0 0 var(--trend-axis-width);
+}
+
+.trend-axis span {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: visible;
+}
+
+@media (max-width: 640px) {
+  .analytics-filter-index,
+  .analytics-add-filter {
+    margin-left: 0;
+  }
+
+  .analytics-filter-index[aria-hidden] {
+    display: none;
+  }
+
+  .trend-plot {
+    height: 180px;
+  }
 }

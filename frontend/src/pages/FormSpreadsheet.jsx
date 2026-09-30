@@ -1,51 +1,61 @@
 import { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import { ArrowDown, ArrowUp, ChartColumn, ChevronsUpDown, Download, FileX, Inbox, Paperclip } from 'lucide-react'
 import { getForm, getFormResponses, exportFormResponses } from '../api'
 
 import Pagination from '../components/Pagination'
+import PageHeader from '../components/PageHeader'
+import EmptyState from '../components/EmptyState'
+import Toast, { useToast } from '../components/Toast'
+
+const DEFAULT_SORT = { key: 'submittedAt', direction: 'desc' }
 
 export default function FormSpreadsheet() {
   const { id } = useParams()
   const [form, setForm] = useState(null)
-  const [responses, setResponses] = useState([])
+  const [responses, setResponses] = useState(null)
   const [page, setPage] = useState(1)
   const [count, setCount] = useState(0)
-  const [loading, setLoading] = useState(true)
+  const [pageLoading, setPageLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [sort, setSort] = useState({ key: 'submittedAt', direction: 'desc' })
+  const [sort, setSort] = useState(DEFAULT_SORT)
   const scrollRef = useRef(null)
   const [fillerRowCount, setFillerRowCount] = useState(0)
   const [fillerRemainder, setFillerRemainder] = useState(0)
   const [dataRowHeight, setDataRowHeight] = useState(0)
+  const [toast, showToast] = useToast()
+
+  // The form definition doesn't change with paging or sorting; load it once.
+  useEffect(() => {
+    let cancelled = false
+    setForm(null)
+    getForm(id)
+      .then(({ data }) => { if (!cancelled) setForm(data) })
+      .catch(() => { if (!cancelled) setError('Failed to load data.') })
+    return () => { cancelled = true }
+  }, [id])
 
   useEffect(() => {
     let cancelled = false
     const controller = new AbortController()
-    setLoading(true)
-    setError(null)
-    async function load() {
-      try {
-        const [formRes, responsesRes] = await Promise.all([
-          getForm(id),
-          getFormResponses(id, { page, page_size: 50, sort: sort.key || 'submittedAt', direction: sort.direction || 'desc' }, controller.signal),
-        ])
-        if (!cancelled) {
-          setForm(formRes.data)
-          setResponses(responsesRes.data.results)
-          setCount(responsesRes.data.count ?? responsesRes.data.results.length)
-        }
-      } catch (err) {
-        if (!cancelled) setError('Failed to load data.')
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-    load()
+    setPageLoading(true)
+    getFormResponses(id, { page, page_size: 50, sort: sort.key, direction: sort.direction }, controller.signal)
+      .then(({ data }) => {
+        if (cancelled) return
+        setResponses(data.results)
+        setCount(data.count ?? data.results.length)
+      })
+      .catch(() => { if (!cancelled) setError('Failed to load data.') })
+      .finally(() => { if (!cancelled) setPageLoading(false) })
     return () => { cancelled = true; controller.abort() }
   }, [id, page, sort])
 
+  // Only the first load replaces the page with a spinner; later pages and
+  // sorts keep the current table on screen while they load.
+  const loading = !error && (!form || responses === null)
+
   const { columns, rows } = useMemo(() => {
-    if (!form) return { columns: [], rows: [] }
+    if (!form || !responses) return { columns: [], rows: [] }
 
     const questions = []
     form.sections.forEach((section) => {
@@ -118,19 +128,30 @@ export default function FormSpreadsheet() {
       }
     }
 
+    // Measure at most once per frame while the window is being resized.
+    let frame = 0
+    function handleResize() {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(updateFillerRows)
+    }
+
     updateFillerRows()
-    window.addEventListener('resize', updateFillerRows)
-    return () => window.removeEventListener('resize', updateFillerRows)
+    window.addEventListener('resize', handleResize)
+    return () => {
+      cancelAnimationFrame(frame)
+      window.removeEventListener('resize', handleResize)
+    }
   }, [sortedRows, loading])
 
   function handleSort(key) {
     setPage(1)
     setSort((current) => {
-      if (current.key === key) {
-        if (current.direction === 'asc') return { key, direction: 'desc' }
-        if (current.direction === 'desc') return { key: null, direction: null }
-      }
-      return { key, direction: 'asc' }
+      if (current.key !== key) return { key, direction: 'asc' }
+      if (current.direction === 'asc') return { key, direction: 'desc' }
+      // Response ID and Submitted At always have a meaningful order, so they
+      // just toggle. Question columns return to the default order.
+      if (key === 'id' || key === 'submittedAt') return { key, direction: 'asc' }
+      return DEFAULT_SORT
     })
   }
 
@@ -147,41 +168,46 @@ export default function FormSpreadsheet() {
       window.URL.revokeObjectURL(url)
     } catch (err) {
       console.error('Failed to export CSV', err)
-      alert('Failed to export CSV')
+      showToast('Failed to export CSV', 'error')
     }
   }
 
   if (loading) return <div className="loading"><div className="spinner" /></div>
-  if (error) return <div className="empty-state"><h2>{error}</h2></div>
+  if (error) return <EmptyState icon={FileX} title="Couldn’t load responses" description={error} />
 
   return (
-    <div className="dashboard spreadsheet-page">
-      <div className="dashboard-header">
-        <div>
-          <h1>Spreadsheet: {form.title}</h1>
-          <span className="form-count">{count} response{count !== 1 ? 's' : ''}</span>
-        </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button onClick={handleExportCSV} className="btn btn-secondary">
-            ⬇ Export CSV
-          </button>
-          <Link to={`/forms/${id}/responses`} className="btn btn-secondary">
-            ← Back to Responses
-          </Link>
-        </div>
+    <div className="spreadsheet-page">
+      <div className="spreadsheet-header">
+        <PageHeader
+          back={{ to: `/forms/${id}/responses`, label: 'Responses' }}
+          title={form.title}
+          subtitle={`${count} response${count !== 1 ? 's' : ''}`}
+          actions={
+            <>
+              <Link to={`/forms/${id}/responses/analytics`} className="btn btn-secondary">
+                <ChartColumn aria-hidden="true" /> Analytics
+              </Link>
+              <button onClick={handleExportCSV} className="btn btn-primary" disabled={count === 0}>
+                <Download aria-hidden="true" /> Export CSV
+              </button>
+            </>
+          }
+        />
       </div>
 
-      <Pagination page={page} pageSize={50} count={count} onPage={setPage} disabled={loading} />
+      <div className="spreadsheet-pagination">
+        <Pagination page={page} pageSize={50} count={count} onPage={setPage} disabled={pageLoading} />
+      </div>
 
       {responses.length === 0 ? (
-        <div className="empty-state">
-          <div className="empty-icon">📭</div>
-          <h2>No responses yet</h2>
-          <p>Share your form link to get started!</p>
-        </div>
+        <EmptyState
+          icon={Inbox}
+          title="No responses yet"
+          description="Share your form’s link or QR code, and responses will show up here as they arrive."
+        />
       ) : (
         <div className="spreadsheet-wrapper">
-          <div className="spreadsheet-scroll" ref={scrollRef}>
+          <div className="spreadsheet-scroll" ref={scrollRef} aria-busy={pageLoading}>
             <table className="spreadsheet-table">
               <thead>
                 <tr>
@@ -195,18 +221,23 @@ export default function FormSpreadsheet() {
                       ].join(' ')}
                       style={{ minWidth: col.width, maxWidth: col.width }}
                       onClick={() => col.sortable && handleSort(col.key)}
+                      onKeyDown={(e) => {
+                        if (col.sortable && (e.key === 'Enter' || e.key === ' ')) {
+                          e.preventDefault()
+                          handleSort(col.key)
+                        }
+                      }}
+                      tabIndex={col.sortable ? 0 : undefined}
+                      aria-sort={sort.key === col.key ? (sort.direction === 'asc' ? 'ascending' : 'descending') : undefined}
                       title={col.label}
                     >
                       <span className="spreadsheet-header-content">
                         <span className="spreadsheet-header-label">{col.label}</span>
                         {col.sortable && (
-                          <span className="spreadsheet-sort-icons" aria-hidden="true">
-                            <span className={sort.key === col.key && sort.direction === 'asc' ? 'active' : ''}>
-                              ▲
-                            </span>
-                            <span className={sort.key === col.key && sort.direction === 'desc' ? 'active' : ''}>
-                              ▼
-                            </span>
+                          <span className={`spreadsheet-sort-icon ${sort.key === col.key ? 'active' : ''}`} aria-hidden="true">
+                            {sort.key !== col.key
+                              ? <ChevronsUpDown size={14} />
+                              : sort.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />}
                           </span>
                         )}
                       </span>
@@ -235,6 +266,7 @@ export default function FormSpreadsheet() {
                                 className="spreadsheet-link"
                                 onClick={(e) => e.stopPropagation()}
                               >
+                                <Paperclip size={12} aria-hidden="true" />
                                 {row[col.key].split('/').pop()}
                               </a>
                             )
@@ -276,6 +308,7 @@ export default function FormSpreadsheet() {
           </div>
         </div>
       )}
+      <Toast toast={toast} />
     </div>
   )
 }

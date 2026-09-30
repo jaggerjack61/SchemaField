@@ -1,6 +1,12 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
+import { CalendarClock, CircleCheck, FileX, LoaderCircle, Lock, TriangleAlert } from 'lucide-react'
 import { getForm, getFormByShareId, submitForm } from '../api'
+import { mediaFileError } from '../media'
+import FormQuestion from '../components/FormQuestion'
+import EmptyState from '../components/EmptyState'
+import Modal from '../components/Modal'
+import Logo from '../components/Logo'
 
 function formatDeadline(value) {
   if (!value) return null
@@ -16,35 +22,6 @@ function isFormClosed(deadline) {
   if (!deadline) return false
   const date = new Date(deadline)
   return !Number.isNaN(date.getTime()) && date <= new Date()
-}
-
-function getMediaType(url) {
-  if (!url) return null
-  const ext = url.split('.').pop().split('?')[0].toLowerCase()
-  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) return 'image'
-  if (['mp4', 'webm', 'ogg'].includes(ext)) return 'video'
-  if (['mp3', 'wav', 'ogg', 'webm', 'm4a'].includes(ext)) return 'audio'
-  return null
-}
-
-function QuestionMedia({ question }) {
-  const mediaUrl = question.media_url || (question.media_file ? `/media/${question.media_file}` : null)
-  const mediaType = getMediaType(mediaUrl)
-  if (!mediaUrl) return null
-
-  return (
-    <div className="question-media-display" style={{ margin: '10px 0' }}>
-      {mediaType === 'image' && (
-        <img src={mediaUrl} alt="Question media" style={{ maxWidth: '100%', maxHeight: '320px', borderRadius: '8px' }} />
-      )}
-      {mediaType === 'video' && (
-        <video src={mediaUrl} controls style={{ maxWidth: '100%', maxHeight: '320px', borderRadius: '8px' }} />
-      )}
-      {mediaType === 'audio' && (
-        <audio src={mediaUrl} controls style={{ width: '100%' }} />
-      )}
-    </div>
-  )
 }
 
 function normalizeAnswer(question, value) {
@@ -72,6 +49,8 @@ export default function PublicFormView() {
   const [errorMessage, setErrorMessage] = useState('')
   const [error, setError] = useState(null)
   const [inputErrors, setInputErrors] = useState({})
+  // Rejected uploads are cleared from the answers, so they don't block submitting.
+  const [fileErrors, setFileErrors] = useState({})
   const closedAt = formatDeadline(form?.deadline)
   const formIsClosed = isFormClosed(form?.deadline)
 
@@ -150,6 +129,18 @@ export default function PublicFormView() {
     })
   }
 
+  function handleFileChange(questionId, file, input) {
+    const fileError = file && mediaFileError(file)
+    if (fileError) {
+      input.value = ''
+      handleInputChange(questionId, '')
+      setFileErrors(prev => ({ ...prev, [questionId]: fileError }))
+      return
+    }
+    setFileErrors(prev => { const next = { ...prev }; delete next[questionId]; return next })
+    handleInputChange(questionId, file)
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
     if (Object.keys(inputErrors).length > 0) return
@@ -197,12 +188,14 @@ export default function PublicFormView() {
       })
 
       // If form requires multipart, Axios handles it if data is FormData
-      await submitForm(form.id, answerIndex ? formData : { answers: [] })
+      await submitForm(form.share_id, answerIndex ? formData : { answers: [] })
       setSubmitted(true)
     } catch (err) {
       console.error(err)
       const errors = err.response?.data
-      setErrorMessage(errors?.detail || (errors ? Object.values(errors).flat().map(value => typeof value === 'string' ? value : JSON.stringify(value)).join(' ') : 'Failed to submit form. Please check your connection and try again.'))
+      // The server reports the deadline in UTC; show it in the respondent's time zone.
+      const serverClosedAt = formatDeadline(errors?.deadline)
+      setErrorMessage(serverClosedAt ? `This form closed on ${serverClosedAt}. New responses are no longer being accepted.` : errors?.detail || (errors ? Object.values(errors).flat().map(value => typeof value === 'string' ? value : JSON.stringify(value)).join(' ') : 'Failed to submit form. Please check your connection and try again.'))
       setShowErrorModal(true)
     } finally {
       setSubmitting(false)
@@ -210,154 +203,130 @@ export default function PublicFormView() {
   }
 
   if (loading) return <div className="loading"><div className="spinner" /></div>
-  if (error) return <div className="empty-state"><h2>{error}</h2></div>
+  if (error) {
+    return (
+      <EmptyState
+        icon={FileX}
+        title="Form unavailable"
+        description="This form couldn’t be loaded. The link may be incorrect, or the form may have been removed."
+      />
+    )
+  }
   if (submitted) {
-     return (
-       <div className="preview-container" style={{ textAlign: 'center', padding: '60px 20px' }}>
-         <div style={{ fontSize: '4rem', marginBottom: '20px' }}>🎉</div>
-         <h1>Thank you!</h1>
-         <p>Your response has been recorded.</p>
-         <button className="btn btn-secondary" onClick={() => window.location.reload()}>
-           Submit another response
-         </button>
-       </div>
-     )
+    return (
+      <div className="respond-page">
+        <div className="card respond-done">
+          <EmptyState
+            icon={CircleCheck}
+            tone="success"
+            title="Thank you!"
+            description="Your response has been recorded."
+            action={
+              <button className="btn btn-secondary" onClick={() => window.location.reload()}>
+                Submit another response
+              </button>
+            }
+          />
+        </div>
+        <PoweredBy />
+      </div>
+    )
   }
 
+  const hasRequired = form.sections.some(section => section.questions.some(q => q.required))
+
   return (
-    <div className="preview-container">
-      <div className="preview-header">
+    <div className="respond-page">
+      <header className="card respond-header">
         <h1>{form.title}</h1>
-        {form.description && <p>{form.description}</p>}
-        {closedAt && (
-          <div className={`form-deadline-banner ${formIsClosed ? 'is-closed' : ''}`}>
-            {formIsClosed ? `Closed on ${closedAt}` : `Open until ${closedAt}`}
+        {form.description && <p className="respond-description">{form.description}</p>}
+        {(closedAt || (hasRequired && !formIsClosed)) && (
+          <div className="respond-meta">
+            {closedAt && (
+              <span className={`badge ${formIsClosed ? 'badge-danger' : 'badge-accent'}`}>
+                {formIsClosed ? <Lock aria-hidden="true" /> : <CalendarClock aria-hidden="true" />}
+                {formIsClosed ? `Closed on ${closedAt}` : `Open until ${closedAt}`}
+              </span>
+            )}
+            {hasRequired && !formIsClosed && (
+              <span className="respond-required-note"><span className="required-star">*</span> Required</span>
+            )}
           </div>
         )}
-      </div>
+      </header>
 
       {formIsClosed ? (
-        <div className="preview-closed-state">
-          <div className="empty-icon">⏳</div>
-          <h2>This form is closed</h2>
-          <p>
-            {closedAt
+        <div className="card">
+          <EmptyState
+            icon={Lock}
+            title="This form is closed"
+            description={closedAt
               ? `The submission deadline passed on ${closedAt}. New responses are no longer being accepted.`
               : 'This form is no longer accepting responses.'}
-          </p>
+          />
         </div>
       ) : (
+        <form onSubmit={handleSubmit} className="respond-form">
+          {form.sections.map((section, si) => (
+            <section className="card respond-section" key={si}>
+              {(form.sections.length > 1 || section.description) && (
+                <div className="respond-section-head">
+                  <h2>{section.title}</h2>
+                  {section.description && <p>{section.description}</p>}
+                </div>
+              )}
+              {section.questions.map((question, qi) => (
+                <FormQuestion
+                  key={qi}
+                  question={question}
+                  index={qi}
+                  value={answers[question.id]}
+                  error={inputErrors[question.id] || fileErrors[question.id]}
+                  onChange={value => question.question_type === 'number'
+                    ? handleNumberInput(question.id, value)
+                    : handleInputChange(question.id, value)}
+                  onBlur={value => handleBlur(question, value)}
+                  onToggleChoice={choiceId => handleChoiceChange(question.id, choiceId, question.question_type)}
+                  onFile={(file, input) => handleFileChange(question.id, file, input)}
+                />
+              ))}
+            </section>
+          ))}
 
-      <form onSubmit={handleSubmit}>
-        {form.sections.map((section, si) => (
-          <div className="preview-section" key={si}>
-            <h2>{section.title}</h2>
-            {section.description && <div className="section-desc-text">{section.description}</div>}
-
-            {section.questions.map((question, qi) => (
-              <div className="preview-question" key={qi}>
-                <label>
-                  {question.text}
-                  {question.required && <span className="required-star">*</span>}
-                </label>
-                <QuestionMedia question={question} />
-                
-                {/* Render Inputs */}
-                {(question.question_type === 'short_text' || question.question_type === 'number' || question.question_type === 'float') && (
-                  <>
-                    <input
-                      type={question.question_type === 'short_text' ? 'text' : 'number'}
-                      step={question.question_type === 'float' ? 'any' : question.question_type === 'number' ? '1' : undefined}
-                      required={question.required}
-                      value={answers[question.id] || ''}
-                      onChange={e => question.question_type === 'number'
-                        ? handleNumberInput(question.id, e.target.value)
-                        : handleInputChange(question.id, e.target.value)
-                      }
-                      onBlur={e => handleBlur(question, e.target.value)}
-                      placeholder="Your answer"
-                      style={inputErrors[question.id] ? { borderColor: 'var(--error, #e05252)' } : undefined}
-                    />
-                    {inputErrors[question.id] && (
-                      <span style={{ color: 'var(--error, #e05252)', fontSize: '0.8rem', marginTop: '4px', display: 'block' }}>
-                        {inputErrors[question.id]}
-                      </span>
-                    )}
-                  </>
-                )}
-
-                {question.question_type === 'long_text' && (
-                  <textarea
-                    required={question.required}
-                    value={answers[question.id] || ''}
-                    onChange={e => handleInputChange(question.id, e.target.value)}
-                    onBlur={e => handleBlur(question, e.target.value)}
-                    placeholder="Your answer"
-                    rows={3}
-                  />
-                )}
-
-                {(question.question_type === 'multiple_choice' || question.question_type === 'multiple_select') && (
-                  <div>
-                    {question.choices.map((choice, ci) => (
-                      <div className="preview-choice" key={ci}>
-                        <input
-                          type={question.question_type === 'multiple_choice' ? 'radio' : 'checkbox'}
-                          name={`q-${question.id}`}
-                          required={question.required && (!answers[question.id] || answers[question.id].length === 0)}
-                          checked={answers[question.id]?.includes(choice.id)}
-                          onChange={() => handleChoiceChange(question.id, choice.id, question.question_type)}
-                        />
-                        <span>{choice.text}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                
-                {question.question_type === 'media' && (
-                   <div style={{ marginTop: '8px' }}>
-                     <input 
-                       type="file" 
-                       required={question.required}
-                       accept="image/*,video/*,audio/*"
-                       onChange={e => {
-                         const file = e.target.files[0]
-                         if (file && file.size > 10 * 1024 * 1024) {
-                           alert('File too large. Maximum size is 10 MB.')
-                           e.target.value = ''
-                           return
-                         }
-                         handleInputChange(question.id, file)
-                       }}
-                     />
-                   </div>
-                )}
-              </div>
-            ))}
+          <div className="respond-actions">
+            <button type="submit" className="btn btn-primary btn-lg" disabled={submitting}>
+              {submitting && <LoaderCircle className="btn-spinner" aria-hidden="true" />}
+              {submitting ? 'Submitting…' : 'Submit'}
+            </button>
           </div>
-        ))}
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <button type="submit" className="btn btn-primary" disabled={submitting}>
-            {submitting ? 'Submitting...' : 'Submit'}
-          </button>
-        </div>
-      </form>
+        </form>
       )}
 
-      {/* Error Modal */}
+      <PoweredBy />
+
       {showErrorModal && (
-        <div className="share-modal-overlay" onClick={() => setShowErrorModal(false)}>
-          <div className="share-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px', textAlign: 'center' }}>
-            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>⚠️</div>
-            <h3>Submission Failed</h3>
-            <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>{errorMessage}</p>
+        <Modal
+          size="sm"
+          title="Submission failed"
+          description={errorMessage}
+          icon={<TriangleAlert />}
+          tone="danger"
+          onClose={() => setShowErrorModal(false)}
+          footer={
             <button className="btn btn-primary" onClick={() => setShowErrorModal(false)}>
               OK
             </button>
-          </div>
-        </div>
+          }
+        />
       )}
     </div>
+  )
+}
+
+function PoweredBy() {
+  return (
+    <p className="respond-powered">
+      <Logo size={16} /> Powered by SchemaField
+    </p>
   )
 }

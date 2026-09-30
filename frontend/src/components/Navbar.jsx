@@ -1,96 +1,100 @@
-import { useState, useRef, useEffect } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link, NavLink, useLocation } from 'react-router-dom'
+import { LayoutGrid, LogOut, Moon, Shield, Sun, UserRound } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
+import useDismiss from '../hooks/useDismiss'
+import Logo from './Logo'
+import { getInitials } from '../initials'
 
 export default function Navbar() {
   const location = useLocation()
   const { user, logout, isAdmin } = useAuth()
   const { theme, toggleTheme } = useTheme()
-  const isLogin = location.pathname === '/login'
-  const [dropdownOpen, setDropdownOpen] = useState(false)
-  const dropdownRef = useRef(null)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef(null)
+  const closeMenu = useCallback(() => setMenuOpen(false), [])
+  useDismiss(menuRef, menuOpen, closeMenu)
 
   useEffect(() => {
-    function handleClickOutside(e) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
-        setDropdownOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
-
-  // Close dropdown on navigation
-  useEffect(() => {
-    setDropdownOpen(false)
+    setMenuOpen(false)
   }, [location.pathname])
 
-  if (isLogin) return null
+  if (location.pathname === '/login') return null
+
+  // Respondents filling a shared form don't need account navigation.
+  const isRespondentView = location.pathname.startsWith('/f/')
+  const themeLabel = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'
 
   return (
-    <nav className="navbar">
-      <Link to="/" className="navbar-brand">
-        <span className="logo-icon">S</span>
-        SchemaField
-      </Link>
-      <div className="navbar-links">
-        <button
-          className="theme-toggle"
-          onClick={toggleTheme}
-          aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-        >
-          {theme === 'dark' ? (
-            /* Sun icon */
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="4" />
-              <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
-            </svg>
-          ) : (
-            /* Moon icon */
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-            </svg>
-          )}
-        </button>
-        {user ? (
-          <div className="navbar-dropdown" ref={dropdownRef}>
-            <button
-              className="navbar-dropdown-trigger"
-              onClick={() => setDropdownOpen(prev => !prev)}
-            >
-              {user.email}
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ marginLeft: 6, transition: 'transform 0.2s', transform: dropdownOpen ? 'rotate(180deg)' : 'rotate(0)' }}>
-                <path d="M2.5 4.5L6 8L9.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </button>
-            {dropdownOpen && (
-              <div className="navbar-dropdown-menu">
-                <Link to="/dashboard" className="navbar-dropdown-item">
-                  Dashboard
-                </Link>
-                <Link to="/profile" className="navbar-dropdown-item">
-                  Account Settings
-                </Link>
-                {isAdmin && (
-                  <Link to="/admin/users" className="navbar-dropdown-item">
-                    🛡️ Admin
-                  </Link>
-                )}
-                <div className="navbar-dropdown-divider" />
-                <button onClick={logout} className="navbar-dropdown-item">
-                  Logout
-                </button>
-              </div>
+    <header className="navbar">
+      <div className="navbar-inner">
+        <Link to={user ? '/dashboard' : '/'} className="navbar-brand" aria-label="SchemaField home">
+          <Logo />
+          <span className="navbar-brand-text">SchemaField</span>
+        </Link>
+
+        {user && !isRespondentView && (
+          <nav className="navbar-nav" aria-label="Main">
+            <NavLink to="/dashboard" className="navbar-link">
+              <LayoutGrid aria-hidden="true" />
+              <span>Forms</span>
+            </NavLink>
+            {isAdmin && (
+              <NavLink to="/admin" className="navbar-link">
+                <Shield aria-hidden="true" />
+                <span>Admin</span>
+              </NavLink>
             )}
-          </div>
-        ) : (
-          <Link to="/login" className="btn btn-primary">
-            Login / Register
-          </Link>
+          </nav>
         )}
+
+        <div className="navbar-right">
+          <button className="navbar-icon-btn" onClick={toggleTheme} aria-label={themeLabel} title={themeLabel}>
+            {theme === 'dark' ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
+          </button>
+
+          {user && !isRespondentView ? (
+            <div className="menu-anchor" ref={menuRef}>
+              <button
+                className="navbar-user-trigger"
+                onClick={() => setMenuOpen(open => !open)}
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                aria-label="Account menu"
+              >
+                <span className="avatar avatar-sm">{getInitials(user.name, user.email)}</span>
+              </button>
+              {menuOpen && (
+                <div className="dropdown-menu" role="menu">
+                  <div className="dropdown-label">
+                    <strong>{user.name || 'Account'}</strong>
+                    {user.email}
+                  </div>
+                  <div className="dropdown-divider" />
+                  <Link to="/dashboard" className="dropdown-item" role="menuitem">
+                    <LayoutGrid aria-hidden="true" /> Forms
+                  </Link>
+                  <Link to="/profile" className="dropdown-item" role="menuitem">
+                    <UserRound aria-hidden="true" /> Account settings
+                  </Link>
+                  {isAdmin && (
+                    <Link to="/admin/users" className="dropdown-item" role="menuitem">
+                      <Shield aria-hidden="true" /> Admin
+                    </Link>
+                  )}
+                  <div className="dropdown-divider" />
+                  <button onClick={logout} className="dropdown-item" role="menuitem">
+                    <LogOut aria-hidden="true" /> Log out
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : !user && !isRespondentView ? (
+            <Link to="/login" className="btn btn-primary btn-sm">Sign in</Link>
+          ) : null}
+        </div>
       </div>
-    </nav>
+    </header>
   )
 }

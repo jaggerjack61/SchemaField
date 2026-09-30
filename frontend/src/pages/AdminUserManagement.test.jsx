@@ -47,7 +47,7 @@ describe('AdminUserManagement', () => {
     renderAtRoute(<AdminUserManagement />)
 
     await waitFor(() => {
-      expect(getUsers).toHaveBeenCalledWith('')
+      expect(getUsers).toHaveBeenCalledWith('', expect.any(AbortSignal))
     })
 
     expect(screen.getByText('Alice Smith')).toBeTruthy()
@@ -66,7 +66,7 @@ describe('AdminUserManagement', () => {
     await user.type(searchInput, 'alice')
 
     await waitFor(() => {
-      expect(getUsers).toHaveBeenLastCalledWith('alice')
+      expect(getUsers).toHaveBeenLastCalledWith('alice', expect.any(AbortSignal))
     }, { timeout: 1500 })
   })
 

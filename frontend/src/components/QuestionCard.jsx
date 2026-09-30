@@ -1,211 +1,241 @@
 import { useState, useRef, memo } from 'react'
+import { AlignLeft, CircleAlert, Hash, ImagePlus, LoaderCircle, Paperclip, Sigma, Trash2, Type, X } from 'lucide-react'
 import { uploadQuestionMedia } from '../api'
+import { MEDIA_ACCEPT, getMediaType, mediaFileError } from '../media'
+import { clientKey } from '../formBuilderState'
 
-function getMediaType(url) {
-  if (!url) return null
-  const ext = url.split('.').pop().split('?')[0].toLowerCase()
-  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) return 'image'
-  if (['mp4', 'webm', 'ogg'].includes(ext)) return 'video'
-  if (['mp3', 'wav', 'ogg', 'webm', 'm4a'].includes(ext)) return 'audio'
-  return null
+const CHOICE_TYPES = ['multiple_choice', 'multiple_select']
+
+// What the respondent will see for answer types that have no options to edit.
+const TYPE_PREVIEWS = {
+  short_text: { icon: Type, text: 'Short answer text' },
+  long_text: { icon: AlignLeft, text: 'Long answer text' },
+  number: { icon: Hash, text: 'Whole number' },
+  float: { icon: Sigma, text: 'Decimal number' },
+  media: { icon: Paperclip, text: 'File upload (image, video, audio or document)' },
 }
 
-function QuestionCard({ question, onChange, onRemove, questionIndex }) {
-  const needsChoices = question.question_type === 'multiple_choice' || question.question_type === 'multiple_select'
+function QuestionCard({ question, onChange, onRemove, onUploadStateChange, questionIndex }) {
+  const questionKey = question._key
+  const needsChoices = CHOICE_TYPES.includes(question.question_type)
   const mediaInputRef = useRef(null)
   const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState('')
 
-  function updateField(field, value) {
-    onChange({ ...question, [field]: value })
+  // All edits go through functional updates on the current question, so an
+  // upload that finishes later cannot overwrite changes made in the meantime.
+  function update(updater) {
+    onChange(questionKey, updater)
   }
 
-  function updateChoice(choiceIndex, text) {
-    const newChoices = question.choices.map((c, i) =>
-      i === choiceIndex ? { ...c, text } : c
-    )
-    onChange({ ...question, choices: newChoices })
+  function updateField(field, value) {
+    update(current => ({ ...current, [field]: value }))
+  }
+
+  function updateChoice(choiceKey, text) {
+    update(current => ({
+      ...current,
+      choices: current.choices.map(c => (c._key === choiceKey ? { ...c, text } : c)),
+    }))
   }
 
   function addChoice() {
-    const newChoices = [
-      ...question.choices,
-      { text: `Option ${question.choices.length + 1}`, order: question.choices.length },
-    ]
-    onChange({ ...question, choices: newChoices })
+    update(current => ({
+      ...current,
+      choices: [...current.choices, { _key: clientKey(), text: `Option ${current.choices.length + 1}` }],
+    }))
   }
 
-  function removeChoice(choiceIndex) {
-    const newChoices = question.choices
-      .filter((_, i) => i !== choiceIndex)
-      .map((c, i) => ({ ...c, order: i }))
-    onChange({ ...question, choices: newChoices })
+  function removeChoice(choiceKey) {
+    update(current => ({ ...current, choices: current.choices.filter(c => c._key !== choiceKey) }))
+  }
+
+  function changeType(newType) {
+    update(current => ({
+      ...current,
+      question_type: newType,
+      choices: CHOICE_TYPES.includes(newType)
+        ? (current.choices.length > 0 ? current.choices : [{ _key: clientKey(), text: 'Option 1' }])
+        : [],
+    }))
   }
 
   async function handleMediaUpload(e) {
     const file = e.target.files?.[0]
+    // Allow picking the same file again after an error.
+    e.target.value = ''
     if (!file) return
-    const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
-    if (file.size > MAX_FILE_SIZE) {
-      console.warn('File too large, max 10 MB')
+    const error = mediaFileError(file)
+    if (error) {
+      setUploadError(error)
       return
     }
+    setUploadError('')
     setUploading(true)
+    onUploadStateChange(1)
     try {
       const { data } = await uploadQuestionMedia(file)
-      onChange({ ...question, media_file: data.path, media_url: data.url })
+      update(current => ({ ...current, media_file: data.path, media_url: data.url }))
     } catch (err) {
-      console.error('Failed to upload media', err)
+      setUploadError(err.response?.data?.detail || 'Upload failed. Please try again.')
     } finally {
       setUploading(false)
+      onUploadStateChange(-1)
     }
   }
 
   function removeMedia() {
-    onChange({ ...question, media_file: '', media_url: null })
+    update(current => ({ ...current, media_file: '', media_url: null }))
   }
 
-  function getTypePreviewText() {
-    switch (question.question_type) {
-      case 'short_text': return '📝 Short text answer'
-      case 'long_text': return '📄 Long text answer'
-      case 'number': return '🔢 Integer number'
-      case 'float': return '🔢 Decimal number'
-      case 'media': return '📎 File upload'
-      default: return ''
-    }
-  }
 
   const mediaUrl = question.media_url || (question.media_file ? `/media/${question.media_file}` : null)
   const mediaType = getMediaType(mediaUrl)
 
+  const typePreview = TYPE_PREVIEWS[question.question_type]
+
   return (
     <div className="question-card">
       <div className="question-top-row">
+        <span className="question-index" aria-hidden="true">{questionIndex + 1}</span>
         <input
+          className="input question-text-input"
           type="text"
           value={question.text}
           onChange={(e) => updateField('text', e.target.value)}
           placeholder="Question text"
+          aria-label={`Question ${questionIndex + 1} text`}
         />
         <select
+          className="select question-type-select"
           value={question.question_type}
-          onChange={(e) => {
-            const newType = e.target.value
-            const choices =
-              newType === 'multiple_choice' || newType === 'multiple_select'
-                ? question.choices.length > 0
-                  ? question.choices
-                  : [{ text: 'Option 1', order: 0 }]
-                : []
-            onChange({ ...question, question_type: newType, choices })
-          }}
+          onChange={(e) => changeType(e.target.value)}
+          aria-label={`Question ${questionIndex + 1} type`}
         >
-          <option value="short_text">Short Text</option>
-          <option value="long_text">Long Text</option>
+          <option value="short_text">Short text</option>
+          <option value="long_text">Long text</option>
           <option value="number">Number</option>
-          <option value="float">Float</option>
-          <option value="multiple_choice">Multiple Choice</option>
-          <option value="multiple_select">Multiple Select</option>
-          <option value="media">Media</option>
+          <option value="float">Decimal</option>
+          <option value="multiple_choice">Multiple choice</option>
+          <option value="multiple_select">Multiple select</option>
+          <option value="media">File upload</option>
         </select>
       </div>
 
-      {/* Media attachment area */}
-      <div className="question-media-section">
-        {mediaUrl ? (
+      <div className="question-content">
+        {/* Media attachment area */}
+        {mediaUrl && (
           <div className="question-media-preview">
-            {mediaType === 'image' && (
-              <img src={mediaUrl} alt="Question media" style={{ maxWidth: '100%', maxHeight: '240px', borderRadius: '8px' }} />
-            )}
-            {mediaType === 'video' && (
-              <video src={mediaUrl} controls style={{ maxWidth: '100%', maxHeight: '240px', borderRadius: '8px' }} />
-            )}
-            {mediaType === 'audio' && (
-              <audio src={mediaUrl} controls style={{ width: '100%' }} />
-            )}
+            {mediaType === 'image' && <img src={mediaUrl} alt="Question attachment" />}
+            {mediaType === 'video' && <video src={mediaUrl} controls />}
+            {mediaType === 'audio' && <audio src={mediaUrl} controls />}
             {!mediaType && (
-              <div style={{ padding: '12px', background: 'var(--surface-2, #2a2a3d)', borderRadius: '8px', fontSize: '0.85rem' }}>
-                📎 Attached file: {question.media_file?.split('/').pop()}
+              <div className="question-media-file">
+                <Paperclip size={14} aria-hidden="true" />
+                {question.media_file?.split('/').pop()}
               </div>
             )}
             <button
-              className="btn btn-danger"
+              className="btn btn-secondary btn-sm question-media-remove"
               onClick={removeMedia}
-              title="Remove media"
-              style={{ marginTop: '6px', fontSize: '0.8rem', padding: '4px 12px' }}
+              aria-label="Remove attachment"
+              title="Remove attachment"
             >
-              ✕ Remove
+              <X aria-hidden="true" /> Remove
             </button>
           </div>
-        ) : (
-          <div className="question-media-upload">
-            <button
-              className="btn btn-secondary btn-sm"
-              onClick={() => mediaInputRef.current?.click()}
-              disabled={uploading}
-              style={{ fontSize: '0.8rem', padding: '4px 10px' }}
-            >
-              {uploading ? '⏳ Uploading…' : '📷 Attach Media'}
+        )}
+
+        {/* Choices editor for MC / MS */}
+        {needsChoices && (
+          <div className="choices-list">
+            {question.choices.map((choice, ci) => (
+              <div className="choice-row" key={choice._key}>
+                <span
+                  className={`choice-indicator ${question.question_type === 'multiple_select' ? 'square' : ''}`}
+                  aria-hidden="true"
+                />
+                <input
+                  type="text"
+                  value={choice.text}
+                  onChange={(e) => updateChoice(choice._key, e.target.value)}
+                  placeholder={`Option ${ci + 1}`}
+                  aria-label={`Option ${ci + 1}`}
+                />
+                {question.choices.length > 1 && (
+                  <button
+                    className="btn btn-ghost-danger btn-sm btn-icon"
+                    onClick={() => removeChoice(choice._key)}
+                    aria-label={`Remove option ${ci + 1}`}
+                    title="Remove option"
+                  >
+                    <X aria-hidden="true" />
+                  </button>
+                )}
+              </div>
+            ))}
+            <button className="add-choice-btn" onClick={addChoice}>
+              <span className={`choice-indicator ${question.question_type === 'multiple_select' ? 'square' : ''}`} aria-hidden="true" />
+              Add option
             </button>
-            <input
-              ref={mediaInputRef}
-              type="file"
-              accept="image/*,video/*,audio/*"
-              onChange={handleMediaUpload}
-              style={{ display: 'none' }}
-            />
+          </div>
+        )}
+
+        {/* Type preview for non-choice types */}
+        {!needsChoices && typePreview && (
+          <div className="question-type-preview">
+            <typePreview.icon size={14} aria-hidden="true" />
+            {typePreview.text}
+          </div>
+        )}
+
+        {uploadError && (
+          <div className="field-error question-media-error" role="alert">
+            <CircleAlert aria-hidden="true" />
+            {uploadError}
           </div>
         )}
       </div>
 
-      {/* Choices editor for MC / MS */}
-      {needsChoices && (
-        <div className="choices-list">
-          {question.choices.map((choice, ci) => (
-            <div className="choice-row" key={ci}>
-              <div
-                className={`choice-indicator ${question.question_type === 'multiple_select' ? 'square' : ''}`}
-              />
-              <input
-                type="text"
-                value={choice.text}
-                onChange={(e) => updateChoice(ci, e.target.value)}
-                placeholder={`Option ${ci + 1}`}
-              />
-              {question.choices.length > 1 && (
-                <button
-                  className="btn btn-icon btn-danger"
-                  onClick={() => removeChoice(ci)}
-                  title="Remove option"
-                >
-                  ×
-                </button>
-              )}
-            </div>
-          ))}
-          <button className="add-choice-btn" onClick={addChoice}>
-            + Add option
-          </button>
-        </div>
-      )}
-
-      {/* Type preview for non-choice types */}
-      {!needsChoices && (
-        <div className="question-type-preview">{getTypePreviewText()}</div>
-      )}
-
       <div className="question-bottom-row">
-        <label>
+        <div className="question-media-upload">
+          {!mediaUrl && (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => mediaInputRef.current?.click()}
+              disabled={uploading}
+            >
+              {uploading
+                ? <LoaderCircle className="btn-spinner" aria-hidden="true" />
+                : <ImagePlus aria-hidden="true" />}
+              {uploading ? 'Uploading…' : 'Attach media'}
+            </button>
+          )}
           <input
-            type="checkbox"
-            checked={question.required}
-            onChange={(e) => updateField('required', e.target.checked)}
+            ref={mediaInputRef}
+            type="file"
+            accept={MEDIA_ACCEPT}
+            onChange={handleMediaUpload}
+            hidden
           />
-          Required
-        </label>
+        </div>
         <div className="question-actions">
-          <button className="btn btn-icon btn-danger" onClick={onRemove} title="Delete question">
-            🗑
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={question.required}
+              onChange={(e) => updateField('required', e.target.checked)}
+            />
+            Required
+          </label>
+          <span className="question-actions-divider" aria-hidden="true" />
+          <button
+            className="btn btn-ghost-danger btn-sm btn-icon"
+            onClick={() => onRemove(questionKey)}
+            aria-label="Delete question"
+            title="Delete question"
+          >
+            <Trash2 aria-hidden="true" />
           </button>
         </div>
       </div>

@@ -43,12 +43,13 @@ describe('review regressions', () => {
 
   it('submits an explicit empty answer list for optional questions', async () => {
     const f = structuredClone(form)
+    f.share_id = 'share-uuid'
     f.sections[0].questions = [{ id: 1, text: 'Optional', required: false, question_type: 'short_text', choices: [] }]
     api.getFormByShareId.mockResolvedValue({ data: f })
     api.submitForm.mockResolvedValue({ data: {} })
     mount(PublicFormView, '/f/review', '/f/:shareId')
     fireEvent.click(await screen.findByRole('button', { name: 'Submit' }))
-    await waitFor(() => expect(api.submitForm).toHaveBeenCalledWith(1, { answers: [] }))
+    await waitFor(() => expect(api.submitForm).toHaveBeenCalledWith('share-uuid', { answers: [] }))
     expect(await screen.findByText('Thank you!')).toBeTruthy()
   })
 
@@ -59,16 +60,16 @@ describe('review regressions', () => {
     mount(AdminUserManagement, '/admin/users', '/admin/users')
     await screen.findByText('No users found.')
     fireEvent.click(screen.getByRole('button', { name: /Create User/ }))
-    fireEvent.change(screen.getByPlaceholderText('Name'), { target: { value: 'Created' } })
-    fireEvent.change(screen.getByPlaceholderText('Email'), { target: { value: 'created@example.com' } })
-    fireEvent.change(screen.getByPlaceholderText('Password'), { target: { value: 'review-password' } })
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Created' } })
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'created@example.com' } })
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'review-password' } })
     fireEvent.click(screen.getByRole('button', { name: 'Create' }))
     await screen.findByText('Created')
     expect(screen.getByText('Active')).toBeTruthy()
     expect(screen.queryByText('Invalid Date')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Reset Pass' }))
-    fireEvent.change(screen.getByPlaceholderText('New Password'), { target: { value: 'replacement-password' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Reset' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Reset Password' }))
+    fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'replacement-password' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Update Password' }))
     await waitFor(() => expect(api.resetUserPassword).toHaveBeenCalledWith(42, 'replacement-password'))
   })
 
@@ -116,6 +117,39 @@ describe('review regressions', () => {
     await screen.findByText(/Submission at/)
     fireEvent.click(screen.getByRole('button', { name: /Next page/ }))
     await waitFor(() => expect(api.getFormResponses).toHaveBeenLastCalledWith('1', { page: 2, page_size: 1 }, expect.any(AbortSignal)))
+  })
+
+  it('switches filter connections and exports the same analytics filters', async () => {
+    const f = structuredClone(form)
+    f.sections[0].questions = [{ id: 9, text: 'Text', question_type: 'short_text', choices: [] }]
+    api.getForm.mockResolvedValue({ data: f })
+    api.getFormAnalytics.mockResolvedValue({ data: { count: 2, total_count: 3, questions: {}, trend: [] } })
+    api.exportFormResponses.mockRejectedValue(new Error('Download unavailable'))
+    mount(FormAnalytics, '/forms/1/responses/analytics', '/forms/:id/responses/analytics')
+    fireEvent.change(await screen.findByLabelText('Question 1'), { target: { value: '9' } })
+    fireEvent.change(screen.getByPlaceholderText('Type keyword or phrase'), { target: { value: 'alpha' } })
+    fireEvent.click(screen.getByRole('button', { name: /Add filter/ }))
+    fireEvent.change(screen.getByLabelText('Question 2'), { target: { value: '9' } })
+    fireEvent.change(screen.getAllByPlaceholderText('Type keyword or phrase')[1], { target: { value: 'beta' } })
+    const connection = screen.getByRole('combobox', { name: 'Filter 2 connection' })
+    expect(connection.value).toBe('and')
+    fireEvent.change(connection, { target: { value: 'or' } })
+    await waitFor(() => {
+      const filters = JSON.parse(api.getFormAnalytics.mock.calls.at(-1)[1].filters)
+      expect(filters).toHaveLength(2)
+      expect(filters[1]).toMatchObject({ textQuery: 'beta', conjunction: 'or' })
+    })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Export filtered CSV' }).disabled).toBe(false))
+    const filters = api.getFormAnalytics.mock.calls.at(-1)[1].filters
+    fireEvent.click(screen.getByRole('button', { name: 'Export filtered CSV' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }))
+    await waitFor(() => expect(api.exportFormResponses).toHaveBeenCalledWith('1', { filters, section_titles: 'true' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    fireEvent.change(connection, { target: { value: 'and' } })
+    await waitFor(() => expect(JSON.parse(api.getFormAnalytics.mock.calls.at(-1)[1].filters)[1].conjunction).toBe('and'))
+    fireEvent.click(screen.getByRole('button', { name: 'Clear all' }))
+    expect(screen.queryByLabelText('Filter 2 connection')).toBeNull()
+    await waitFor(() => expect(api.getFormAnalytics.mock.calls.at(-1)[1].filters).toBe('[]'))
   })
 
   it('filters analytics on the server without downloading response pages', async () => {

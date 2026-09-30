@@ -3,12 +3,101 @@
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  /* Full-bleed bars use 100vw, which includes the scrollbar; clip (not hidden) keeps sticky working. */
+  overflow-x: clip;
 }
 
 .main-content {
   flex: 1;
-  max-width: 1100px;
+  max-width: var(--content-width);
   width: 100%;
   margin: 0 auto;
-  padding: 32px 24px 64px;
+  padding: 32px 24px 80px;
+}
+
+/* Marketing and auth pages draw their own full-bleed backgrounds. */
+.main-content:has(> .full-bleed) {
+  max-width: none;
+  padding: 0;
+}
+
+/* ---------- Page Header ---------- */
+.page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px 24px;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+}
+
+.page-header-text {
+  min-width: 0;
+  flex: 1 1 320px;
+}
+
+.page-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 10px;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-muted);
+  transition: color var(--transition);
+  max-width: 100%;
+}
+
+.page-back span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-back:hover {
+  color: var(--text-primary);
+}
+
+.page-title {
+  font-size: var(--text-2xl);
+  font-weight: 650;
+  letter-spacing: -0.025em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-subtitle {
+  display: block;
+  margin-top: 4px;
+  font-size: var(--text-base);
+  color: var(--text-muted);
+}
+
+.page-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 640px) {
+  .main-content {
+    padding: 20px 16px 64px;
+  }
+
+  .page-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .page-header-text {
+    flex-basis: auto;
+    width: 100%;
+  }
+
+  .page-title {
+    font-size: var(--text-xl);
+    white-space: normal;
+  }
 }

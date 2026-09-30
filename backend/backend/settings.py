@@ -116,14 +116,21 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
-    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'DEFAULT_PAGINATION_CLASS': 'forms_api.pagination.StandardPagination',
     'PAGE_SIZE': 25,
+    # Number of trusted reverse proxies in front of Django. Rate limits key on
+    # the client IP; with the DRF default (None) any client can pick its own
+    # "IP" by sending X-Forwarded-For. 0 means use REMOTE_ADDR only.
+    'NUM_PROXIES': int(os.environ.get('DJANGO_NUM_PROXIES', '0')),
 }
 
 from datetime import timedelta
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    # Tokens carry a hash of the password, so changing or resetting a password
+    # signs out every existing session.
+    'CHECK_REVOKE_TOKEN': True,
 }
 
 # --- Media files (for media question type) ---

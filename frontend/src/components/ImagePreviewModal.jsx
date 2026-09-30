@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { X } from 'lucide-react'
 
 const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico', '.bmp']
 
@@ -52,7 +53,7 @@ export default function ImagePreviewModal({ url, isOpen, onClose }) {
             aria-label="Close preview"
             type="button"
           >
-            ✕
+            <X aria-hidden="true" />
           </button>
           {!loaded && <div className="spinner" aria-label="Loading image" />}
           <img

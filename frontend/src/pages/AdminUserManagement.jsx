@@ -1,6 +1,11 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { KeyRound, Pencil, Search, UserPlus } from 'lucide-react'
 import { getUsers, createUser, updateUser, resetUserPassword } from '../api'
+import PageHeader from '../components/PageHeader'
+import AdminNav from '../components/AdminNav'
+import Modal from '../components/Modal'
+import Toast, { useToast } from '../components/Toast'
+import { getInitials } from '../initials'
 
 export default function AdminUserManagement() {
   const [users, setUsers] = useState([])
@@ -20,7 +25,7 @@ export default function AdminUserManagement() {
   const [editForm, setEditForm] = useState({ name: '', email: '', role: 'user' })
   const [saving, setSaving] = useState(false)
 
-  const [toast, setToast] = useState(null)
+  const [toast, showToast] = useToast()
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -30,28 +35,23 @@ export default function AdminUserManagement() {
   }, [searchQuery])
 
   useEffect(() => {
-    loadUsers(debouncedSearch)
-  }, [debouncedSearch])
-
-  async function loadUsers(search = '') {
+    // Abort the previous search so a slow response can't overwrite a newer one.
+    const controller = new AbortController()
     setLoading(true)
-    try {
-      const { data } = await getUsers(search)
-      // Handle paginated response (DRF default) or plain array
-      setUsers(data.results ?? data)
-    } catch (err) {
-      showToast('Failed to load users', 'error')
-    } finally {
-      setLoading(false)
-    }
-  }
+    getUsers(debouncedSearch, controller.signal)
+      .then(({ data }) => setUsers(data.results ?? data))
+      .catch(() => { if (!controller.signal.aborted) showToast('Failed to load users', 'error') })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
+    return () => controller.abort()
+  }, [debouncedSearch, showToast])
 
   async function handleCreateUser(e) {
     e.preventDefault()
     setCreating(true)
     try {
       const { data } = await createUser(newUser)
-      setUsers([...users, data])
+      // Newest first, matching the server's ordering.
+      setUsers(current => [data, ...current])
       setShowModal(false)
       setNewUser({ email: '', name: '', password: '', role: 'user' })
       showToast('User created successfully', 'success')
@@ -87,7 +87,7 @@ export default function AdminUserManagement() {
     setSaving(true)
     try {
       const { data } = await updateUser(editUser.id, editForm)
-      setUsers(users.map(u => u.id === data.id ? data : u))
+      setUsers(current => current.map(u => u.id === data.id ? data : u))
       setEditUser(null)
       showToast('User updated successfully', 'success')
     } catch (err) {
@@ -97,210 +97,277 @@ export default function AdminUserManagement() {
     }
   }
 
-  function showToast(message, type) {
-    setToast({ message, type })
-    setTimeout(() => setToast(null), 3000)
-  }
+  const resetUser = users.find(u => u.id === resetId)
 
   return (
-    <div className="dashboard">
-      <div className="dashboard-header">
-        <h1>Admin - User Management</h1>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-          + Create User
-        </button>
-      </div>
+    <div className="admin-page">
+      <PageHeader
+        title="Admin"
+        subtitle="Manage user accounts and stored files."
+        actions={
+          <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+            <UserPlus aria-hidden="true" /> Create User
+          </button>
+        }
+      />
+      <AdminNav />
 
-      <div className="admin-view-switch">
-        <Link to="/admin/users" className="btn btn-primary">User Management</Link>
-        <Link to="/admin/files" className="btn btn-secondary">File Management</Link>
-      </div>
-
-      <div className="form-card admin-table-wrapper">
-        <div className="admin-search-bar">
-          <input
-            type="text"
-            placeholder="Search users by name or email..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            className="admin-modal-input"
-            aria-label="Search users"
-          />
+      <div className="card">
+        <div className="card-header">
+          <div className="input-with-icon admin-search">
+            <Search aria-hidden="true" />
+            <input
+              type="search"
+              placeholder="Search users by name or email..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="input"
+              aria-label="Search users"
+            />
+          </div>
+          {!loading && (
+            <span className="text-muted admin-count">
+              {users.length} user{users.length !== 1 ? 's' : ''}
+            </span>
+          )}
         </div>
-        <table className="admin-data-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Email</th>
-              <th>Role</th>
-              <th>Status</th>
-              <th>Joined</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead>
               <tr>
-                <td colSpan="6" className="admin-table-loading">
-                  <div className="loading">
-                    <div className="spinner" />
-                  </div>
-                </td>
+                <th>User</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Joined</th>
+                <th className="cell-actions"><span className="sr-only">Actions</span></th>
               </tr>
-            ) : users.length === 0 ? (
-              <tr>
-                <td colSpan="6" className="admin-table-empty">
-                  No users found.
-                </td>
-              </tr>
-            ) : (
-              users.map(user => (
-                <tr key={user.id}>
-                  <td>{user.name}</td>
-                  <td>{user.email}</td>
-                  <td>
-                    <span className={user.role === 'admin' ? 'badge-owned' : 'badge-shared'}>
-                      {user.role}
-                    </span>
-                  </td>
-                  <td>{user.is_active ? 'Active' : 'Inactive'}</td>
-                  <td>{new Date(user.date_joined).toLocaleDateString()}</td>
-                  <td style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button
-                      className="btn btn-secondary"
-                      onClick={() => setResetId(user.id)}
-                    >
-                      Reset Pass
-                    </button>
-                    <button
-                      className="btn btn-secondary"
-                      onClick={() => openEditModal(user)}
-                    >
-                      Edit
-                    </button>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan="5" className="table-message">
+                    <div className="loading admin-table-loading">
+                      <div className="spinner" />
+                    </div>
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : users.length === 0 ? (
+                <tr>
+                  <td colSpan="5" className="table-message">
+                    No users found.
+                  </td>
+                </tr>
+              ) : (
+                users.map(user => (
+                  <tr key={user.id}>
+                    <td>
+                      <div className="user-cell">
+                        <span className="avatar">{getInitials(user.name, user.email)}</span>
+                        <div className="user-cell-text">
+                          <div className="user-cell-name">{user.name}</div>
+                          <div className="user-cell-email">{user.email}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <span className={`badge ${user.role === 'admin' ? 'badge-accent' : ''}`}>
+                        {user.role}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`badge badge-dot ${user.is_active ? 'badge-success' : ''}`}>
+                        {user.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td className="cell-muted">{new Date(user.date_joined).toLocaleDateString()}</td>
+                    <td className="cell-actions">
+                      <div className="row-actions">
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => setResetId(user.id)}
+                        >
+                          <KeyRound aria-hidden="true" />
+                          Reset Password
+                        </button>
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => openEditModal(user)}
+                        >
+                          <Pencil aria-hidden="true" />
+                          Edit
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {showModal && (
-        <div className="share-modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="share-modal" onClick={e => e.stopPropagation()}>
-            <h3>Create New User</h3>
-            <form onSubmit={handleCreateUser} className="admin-modal-form">
+        <Modal
+          title="Create user"
+          description="The new user can sign in immediately with this email and password."
+          icon={<UserPlus />}
+          onClose={() => setShowModal(false)}
+          onSubmit={handleCreateUser}
+          footer={
+            <>
+              <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={creating}>
+                {creating ? 'Creating…' : 'Create'}
+              </button>
+            </>
+          }
+        >
+          <div className="modal-form">
+            <div className="field">
+              <label className="field-label" htmlFor="new-user-name">Name</label>
               <input
+                id="new-user-name"
                 type="text"
-                placeholder="Name"
+                placeholder="Jane Doe"
                 value={newUser.name}
                 onChange={e => setNewUser({ ...newUser, name: e.target.value })}
                 required
-                className="admin-modal-input"
+                autoFocus
+                className="input"
               />
+            </div>
+            <div className="field">
+              <label className="field-label" htmlFor="new-user-email">Email</label>
               <input
+                id="new-user-email"
                 type="email"
-                placeholder="Email"
+                placeholder="jane@company.com"
                 value={newUser.email}
                 onChange={e => setNewUser({ ...newUser, email: e.target.value })}
                 required
-                className="admin-modal-input"
+                className="input"
               />
-              <input
-                type="password"
-                placeholder="Password"
-                value={newUser.password}
-                onChange={e => setNewUser({ ...newUser, password: e.target.value })}
-                required
-                className="admin-modal-input"
-              />
-              <select
-                value={newUser.role}
-                onChange={e => setNewUser({ ...newUser, role: e.target.value })}
-                className="admin-modal-input"
-              >
-                <option value="user">User</option>
-                <option value="admin">Admin</option>
-              </select>
-
-              <div className="share-modal-actions">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary" disabled={creating}>
-                  {creating ? 'Creating...' : 'Create'}
-                </button>
+            </div>
+            <div className="field-row">
+              <div className="field">
+                <label className="field-label" htmlFor="new-user-password">Password</label>
+                <input
+                  id="new-user-password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={newUser.password}
+                  onChange={e => setNewUser({ ...newUser, password: e.target.value })}
+                  required
+                  className="input"
+                />
               </div>
-            </form>
+              <div className="field">
+                <label className="field-label" htmlFor="new-user-role">Role</label>
+                <select
+                  id="new-user-role"
+                  value={newUser.role}
+                  onChange={e => setNewUser({ ...newUser, role: e.target.value })}
+                  className="select"
+                >
+                  <option value="user">User</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+            </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {resetId && (
-        <div className="share-modal-overlay" onClick={() => setResetId(null)}>
-          <div className="share-modal" onClick={e => e.stopPropagation()}>
-            <h3>Reset Password</h3>
-            <p>Enter new password for user ID {resetId}</p>
-            <form onSubmit={handleResetPassword} className="admin-modal-form">
-              <input
-                type="password"
-                placeholder="New Password"
-                value={newPassword}
-                onChange={e => setNewPassword(e.target.value)}
-                required
-                className="admin-modal-input"
-              />
-              <div className="share-modal-actions">
-                <button type="button" className="btn btn-secondary" onClick={() => setResetId(null)}>Cancel</button>
-                <button type="submit" className="btn btn-primary" disabled={resetting}>
-                  {resetting ? 'Resetting...' : 'Reset'}
-                </button>
-              </div>
-            </form>
+        <Modal
+          title="Reset password"
+          description={resetUser
+            ? `Set a new password for ${resetUser.name || resetUser.email}. They’ll need to use it the next time they sign in.`
+            : 'Set a new password for this user.'}
+          icon={<KeyRound />}
+          size="sm"
+          onClose={() => setResetId(null)}
+          onSubmit={handleResetPassword}
+          footer={
+            <>
+              <button type="button" className="btn btn-secondary" onClick={() => setResetId(null)}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={resetting}>
+                {resetting ? 'Updating…' : 'Update Password'}
+              </button>
+            </>
+          }
+        >
+          <div className="field">
+            <label className="field-label" htmlFor="reset-password">New password</label>
+            <input
+              id="reset-password"
+              type="password"
+              autoComplete="new-password"
+              value={newPassword}
+              onChange={e => setNewPassword(e.target.value)}
+              required
+              autoFocus
+              className="input"
+            />
           </div>
-        </div>
+        </Modal>
       )}
 
       {editUser && (
-        <div className="share-modal-overlay" onClick={() => setEditUser(null)}>
-          <div className="share-modal" onClick={e => e.stopPropagation()}>
-            <h3>Edit User</h3>
-            <form onSubmit={handleEditUser} className="admin-modal-form">
+        <Modal
+          title="Edit user"
+          icon={<Pencil />}
+          onClose={() => setEditUser(null)}
+          onSubmit={handleEditUser}
+          footer={
+            <>
+              <button type="button" className="btn btn-secondary" onClick={() => setEditUser(null)}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={saving}>
+                {saving ? 'Saving…' : 'Save Changes'}
+              </button>
+            </>
+          }
+        >
+          <div className="modal-form">
+            <div className="field">
+              <label className="field-label" htmlFor="edit-user-name">Name</label>
               <input
+                id="edit-user-name"
                 type="text"
-                placeholder="Name"
                 value={editForm.name}
                 onChange={e => setEditForm({ ...editForm, name: e.target.value })}
                 required
-                className="admin-modal-input"
+                className="input"
               />
+            </div>
+            <div className="field">
+              <label className="field-label" htmlFor="edit-user-email">Email</label>
               <input
+                id="edit-user-email"
                 type="email"
-                placeholder="Email"
                 value={editForm.email}
                 onChange={e => setEditForm({ ...editForm, email: e.target.value })}
                 required
-                className="admin-modal-input"
+                className="input"
               />
+            </div>
+            <div className="field">
+              <label className="field-label" htmlFor="edit-user-role">Role</label>
               <select
+                id="edit-user-role"
                 value={editForm.role}
                 onChange={e => setEditForm({ ...editForm, role: e.target.value })}
-                className="admin-modal-input"
+                className="select"
               >
                 <option value="user">User</option>
                 <option value="admin">Admin</option>
               </select>
-              <div className="share-modal-actions">
-                <button type="button" className="btn btn-secondary" onClick={() => setEditUser(null)}>Cancel</button>
-                <button type="submit" className="btn btn-primary" disabled={saving}>
-                  {saving ? 'Saving...' : 'Save'}
-                </button>
-              </div>
-            </form>
+            </div>
           </div>
-        </div>
+        </Modal>
       )}
 
-      {toast && <div className={`toast ${toast.type}`}>{toast.message}</div>}
+      <Toast toast={toast} />
     </div>
   )
 }

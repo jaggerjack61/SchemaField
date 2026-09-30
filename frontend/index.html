@@ -7,14 +7,25 @@
       name="description"
       content="Create, edit and manage forms with an intuitive drag-and-drop builder. Supports multiple question types including text, numbers, multiple choice, and media."
     />
-    <title>SchemaField — Data Capture Platform</title>
+    <meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#09090b" media="(prefers-color-scheme: dark)" />
+    <title>SchemaField — Forms, responses and analytics</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Loaded without blocking first paint; the system font shows until Inter arrives. -->
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400..800&display=swap"
       rel="stylesheet"
+      media="print"
+      onload="this.media='all'"
     />
+    <noscript>
+      <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400..800&display=swap"
+        rel="stylesheet"
+      />
+    </noscript>
   </head>
   <body>
     <script>

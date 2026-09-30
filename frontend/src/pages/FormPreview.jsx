@@ -1,35 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import { ChartColumn, Eye, FileX, Pencil } from 'lucide-react'
 import { getForm } from '../api'
-
-function getMediaType(url) {
-  if (!url) return null
-  const ext = url.split('.').pop().split('?')[0].toLowerCase()
-  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) return 'image'
-  if (['mp4', 'webm', 'ogg'].includes(ext)) return 'video'
-  if (['mp3', 'wav', 'ogg', 'webm', 'm4a'].includes(ext)) return 'audio'
-  return null
-}
-
-function QuestionMedia({ question }) {
-  const mediaUrl = question.media_url || (question.media_file ? `/media/${question.media_file}` : null)
-  const mediaType = getMediaType(mediaUrl)
-  if (!mediaUrl) return null
-
-  return (
-    <div className="question-media-display" style={{ margin: '10px 0' }}>
-      {mediaType === 'image' && (
-        <img src={mediaUrl} alt="Question media" style={{ maxWidth: '100%', maxHeight: '320px', borderRadius: '8px' }} />
-      )}
-      {mediaType === 'video' && (
-        <video src={mediaUrl} controls style={{ maxWidth: '100%', maxHeight: '320px', borderRadius: '8px' }} />
-      )}
-      {mediaType === 'audio' && (
-        <audio src={mediaUrl} controls style={{ width: '100%' }} />
-      )}
-    </div>
-  )
-}
+import FormQuestion from '../components/FormQuestion'
+import EmptyState from '../components/EmptyState'
 
 export default function FormPreview() {
   const { id } = useParams()
@@ -52,45 +26,6 @@ export default function FormPreview() {
     return () => { cancelled = true }
   }, [id])
 
-  function renderQuestionInput(question) {
-    switch (question.question_type) {
-      case 'short_text':
-        return <input type="text" placeholder="Your answer" readOnly />
-      case 'long_text':
-        return <textarea placeholder="Your answer" rows={3} readOnly />
-      case 'number':
-        return <input type="number" placeholder="0" readOnly />
-      case 'float':
-        return <input type="number" step="0.01" placeholder="0.00" readOnly />
-      case 'multiple_choice':
-        return (
-          <div>
-            {question.choices.map((choice, i) => (
-              <div className="preview-choice" key={i}>
-                <input type="radio" name={`q-${question.id || i}`} disabled />
-                <span>{choice.text}</span>
-              </div>
-            ))}
-          </div>
-        )
-      case 'multiple_select':
-        return (
-          <div>
-            {question.choices.map((choice, i) => (
-              <div className="preview-choice" key={i}>
-                <input type="checkbox" disabled />
-                <span>{choice.text}</span>
-              </div>
-            ))}
-          </div>
-        )
-      case 'media':
-        return <input type="file" disabled />
-      default:
-        return null
-    }
-  }
-
   if (loading) {
     return (
       <div className="loading">
@@ -101,47 +36,58 @@ export default function FormPreview() {
 
   if (!form) {
     return (
-      <div className="empty-state">
-        <h2>Form not found</h2>
-        <Link to="/" className="btn btn-primary">← Back to Dashboard</Link>
-      </div>
+      <EmptyState
+        icon={FileX}
+        title="Form not found"
+        description="This form doesn’t exist or you no longer have access to it."
+        action={<Link to="/dashboard" className="btn btn-primary">Back to forms</Link>}
+      />
     )
   }
 
   return (
-    <div className="preview-container">
-      <div className="preview-header">
-        <h1>{form.title}</h1>
-        {form.description && <p>{form.description}</p>}
+    <div className="respond-page">
+      <div className="preview-banner">
+        <div className="preview-banner-text">
+          <Eye size={16} aria-hidden="true" />
+          <span><strong>Preview</strong> — this is how respondents will see your form.</span>
+        </div>
+        <div className="preview-banner-actions">
+          <Link to={`/forms/${id}/responses`} className="btn btn-secondary btn-sm">
+            <ChartColumn aria-hidden="true" /> Responses
+          </Link>
+          <Link to={`/forms/${id}/edit`} className="btn btn-primary btn-sm">
+            <Pencil aria-hidden="true" /> Edit Form
+          </Link>
+        </div>
       </div>
 
-      {form.sections.map((section, si) => (
-        <div className="preview-section" key={si}>
-          <h2>{section.title}</h2>
-          {section.description && (
-            <div className="section-desc-text">{section.description}</div>
-          )}
+      <header className="card respond-header">
+        <h1>{form.title}</h1>
+        {form.description && <p className="respond-description">{form.description}</p>}
+      </header>
 
-          {section.questions.map((question, qi) => (
-            <div className="preview-question" key={qi}>
-              <label>
-                {question.text}
-                {question.required && <span className="required-star">*</span>}
-              </label>
-              <QuestionMedia question={question} />
-              {renderQuestionInput(question)}
-            </div>
-          ))}
-        </div>
-      ))}
+      <div className="respond-form">
+        {form.sections.map((section, si) => (
+          <section className="card respond-section" key={si}>
+            {(form.sections.length > 1 || section.description) && (
+              <div className="respond-section-head">
+                <h2>{section.title}</h2>
+                {section.description && <p>{section.description}</p>}
+              </div>
+            )}
+            {section.questions.length === 0 && (
+              <p className="text-muted">This section has no questions yet.</p>
+            )}
+            {section.questions.map((question, qi) => (
+              <FormQuestion key={qi} question={question} index={`${si}-${qi}`} readOnly />
+            ))}
+          </section>
+        ))}
+      </div>
 
-      <div style={{ marginTop: '20px', display: 'flex', gap: '12px' }}>
-        <Link to={`/forms/${id}/edit`} className="btn btn-secondary">
-          ✏️ Edit Form
-        </Link>
-        <Link to="/" className="btn btn-secondary">
-          ← Back to Dashboard
-        </Link>
+      <div className="respond-actions">
+        <Link to="/dashboard" className="btn btn-secondary">Back to forms</Link>
       </div>
     </div>
   )

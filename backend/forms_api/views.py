@@ -3,46 +3,59 @@ import rest_framework
 from rest_framework.decorators import action
 from rest_framework.response import Response as DRFResponse
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
+from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework.exceptions import ValidationError
 from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
 from django.db.models import Q, Count, Prefetch, Exists, OuterRef, Subquery
 from django.db.models.functions import Coalesce
 from django.contrib.auth import get_user_model
 from django.conf import settings
-from django.http import StreamingHttpResponse
+from django.http import Http404, StreamingHttpResponse
 from django.utils import timezone
 
+from collections import Counter, namedtuple
+from collections.abc import Mapping
 from pathlib import Path
 import csv
 import heapq
 import io
 import os
+import re
 import shutil
 import uuid as _uuid
 from datetime import datetime, timezone as dt_timezone
 
 from .models import Form, FormPermission, Answer, Question, Section, Response, FormArchive
 from .csv_utils import safe_csv_cell
-from .response_queries import filter_responses, order_responses, response_analytics
+from .response_queries import filter_responses, order_responses, parse_timezone, response_analytics
 from .serializers import (
     FormListSerializer, FormDetailSerializer, ResponseSerializer,
-    UserSerializer, LoginSerializer, CreateUserSerializer, 
+    UserSerializer, LoginSerializer, CreateUserSerializer,
     ResetPasswordSerializer, FormPermissionSerializer,
-    UpdateProfileSerializer, ChangePasswordSerializer
+    UpdateProfileSerializer, ChangePasswordSerializer,
+    RevocationAwareTokenRefreshSerializer,
 )
 from .permissions import IsAdmin, IsFormOwner, HasFormPermission
 from .upload_validation import (
+    MAX_MEDIA_UPLOAD_SIZE,
     MAX_SUBMISSION_UPLOAD_SIZE,
+    REQUEST_OVERHEAD_ALLOWANCE,
     media_upload_error,
+    request_body_too_large,
 )
 
 
+# Each throttle needs its own scope: throttles with the same scope share one
+# cache key, so e.g. public submissions would use up the login allowance.
 class UploadRateThrottle(UserRateThrottle):
+    scope = 'media_upload'
     rate = '30/min'
 
 
 class SubmissionRateThrottle(AnonRateThrottle):
+    scope = 'submission'
     rate = '60/hour'
 
 
@@ -52,6 +65,9 @@ class UploadQuestionMediaView(APIView):
     throttle_classes = [UploadRateThrottle]
 
     def post(self, request):
+        if request_body_too_large(request, MAX_MEDIA_UPLOAD_SIZE + REQUEST_OVERHEAD_ALLOWANCE):
+            return DRFResponse({'detail': 'File too large. Maximum size is 10 MB.'},
+                               status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
         file = request.FILES.get('file')
         if not file:
             return DRFResponse({'detail': 'No file provided.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -85,6 +101,41 @@ FILE_BROWSER_DEFAULT_PAGE_SIZE = 50
 FILE_BROWSER_MAX_PAGE_SIZE = 200
 
 
+MANAGED_MEDIA_DIRS = ('uploads', 'qrcodes', 'question_media')
+REFERENCE_CHECK_BATCH_SIZE = 500
+
+OrphanedFile = namedtuple('OrphanedFile', ['path', 'relative_path', 'size', 'mtime'])
+
+
+def _iter_files(root):
+    """Yield DirEntry objects for every file below root, without following symlinks."""
+    pending = [root]
+    while pending:
+        try:
+            with os.scandir(pending.pop()) as iterator:
+                for entry in iterator:
+                    if entry.is_dir(follow_symlinks=False):
+                        pending.append(entry.path)
+                    elif entry.is_file(follow_symlinks=False):
+                        yield entry
+        except FileNotFoundError:
+            continue
+
+
+def _extension(name):
+    return os.path.splitext(name)[1].lower().lstrip('.') or 'unknown'
+
+
+def _referenced_media_paths(paths):
+    referenced = set()
+    for start in range(0, len(paths), REFERENCE_CHECK_BATCH_SIZE):
+        batch = paths[start:start + REFERENCE_CHECK_BATCH_SIZE]
+        referenced.update(Answer.objects.filter(file_answer__in=batch).values_list('file_answer', flat=True))
+        referenced.update(Question.objects.filter(media_file__in=batch).values_list('media_file', flat=True))
+        referenced.update(Form.objects.filter(qr_code__in=batch).values_list('qr_code', flat=True))
+    return referenced
+
+
 def _resolve_media_child(media_root, relative_path):
     target_path = (media_root / relative_path).resolve() if relative_path else media_root
     try:
@@ -108,11 +159,23 @@ def _get_positive_int_query_param(query_params, name, default, maximum=None):
 
 
 class LoginRateThrottle(AnonRateThrottle):
+    scope = 'login'
     rate = '5/min'
 
 
-class FileManagerRateThrottle(UserRateThrottle):
+class TokenRefreshRateThrottle(AnonRateThrottle):
+    scope = 'token_refresh'
     rate = '30/min'
+
+
+class FileManagerRateThrottle(UserRateThrottle):
+    scope = 'file_manager'
+    rate = '30/min'
+
+
+def _tokens_for(user):
+    refresh = RefreshToken.for_user(user)
+    return {'access': str(refresh.access_token), 'refresh': str(refresh)}
 
 
 class LoginView(TokenObtainPairView):
@@ -122,8 +185,9 @@ class LoginView(TokenObtainPairView):
 
 
 class RefreshTokenView(TokenRefreshView):
+    serializer_class = RevocationAwareTokenRefreshSerializer
     permission_classes = [permissions.AllowAny]
-    throttle_classes = [LoginRateThrottle]
+    throttle_classes = [TokenRefreshRateThrottle]
 
 
 class MeView(APIView):
@@ -150,16 +214,18 @@ class ChangePasswordView(APIView):
             return DRFResponse({'current_password': ['Incorrect password.']}, status=status.HTTP_400_BAD_REQUEST)
         request.user.set_password(serializer.validated_data['new_password'])
         request.user.save()
-        return DRFResponse({'status': 'password changed'})
+        # Changing the password revokes every existing token, including the
+        # caller's, so hand this session a fresh pair.
+        return DRFResponse({'status': 'password changed', **_tokens_for(request.user)})
 
 
 class UserViewSet(viewsets.ModelViewSet):
-    queryset = User.objects.all().order_by('-date_joined')
+    queryset = User.objects.all().order_by('-date_joined', '-id')
     serializer_class = UserSerializer
     permission_classes = [IsAdmin]
 
     def get_queryset(self):
-        qs = User.objects.all().order_by('-date_joined')
+        qs = User.objects.all().order_by('-date_joined', '-id')
         search = (self.request.query_params.get('search') or '').strip()
         if search:
             qs = qs.filter(
@@ -186,12 +252,6 @@ class UserViewSet(viewsets.ModelViewSet):
         media_root = Path(settings.MEDIA_ROOT).resolve()
         media_root.mkdir(parents=True, exist_ok=True)
 
-        uploads_root = (media_root / 'uploads').resolve()
-        uploads_root.mkdir(parents=True, exist_ok=True)
-
-        qrcodes_root = (media_root / 'qrcodes').resolve()
-        qrcodes_root.mkdir(parents=True, exist_ok=True)
-
         referenced_upload_files = set(
             Answer.objects.exclude(file_answer='').exclude(file_answer__isnull=True).values_list('file_answer', flat=True)
         )
@@ -205,16 +265,14 @@ class UserViewSet(viewsets.ModelViewSet):
 
         orphaned_files = []
         cutoff = timezone.now().timestamp() - getattr(settings, 'ORPHAN_UPLOAD_GRACE_SECONDS', 86400)
-        question_media_root = (media_root / 'question_media').resolve()
-        question_media_root.mkdir(parents=True, exist_ok=True)
-
-        for root in [uploads_root, qrcodes_root, question_media_root]:
-            for path in root.rglob('*'):
-                if not path.is_file():
-                    continue
-                relative_path = path.relative_to(media_root).as_posix()
-                if relative_path not in referenced_files and path.stat().st_mtime < cutoff:
-                    orphaned_files.append(path)
+        for managed_dir in MANAGED_MEDIA_DIRS:
+            for entry in _iter_files(media_root / managed_dir):
+                relative_path = Path(entry.path).relative_to(media_root).as_posix()
+                stat_info = entry.stat(follow_symlinks=False)
+                if relative_path not in referenced_files and stat_info.st_mtime < cutoff:
+                    orphaned_files.append(OrphanedFile(
+                        Path(entry.path), relative_path, stat_info.st_size, stat_info.st_mtime,
+                    ))
 
         return media_root, orphaned_files
 
@@ -223,9 +281,14 @@ class UserViewSet(viewsets.ModelViewSet):
         media_root = Path(settings.MEDIA_ROOT).resolve()
         media_root.mkdir(parents=True, exist_ok=True)
 
-        all_files = [p for p in media_root.rglob('*') if p.is_file()]
-        total_size_bytes = sum(p.stat().st_size for p in all_files)
-        total_files = len(all_files)
+        # One directory walk and one stat per file.
+        total_size_bytes = 0
+        total_files = 0
+        extension_counts = Counter()
+        for entry in _iter_files(media_root):
+            total_files += 1
+            total_size_bytes += entry.stat(follow_symlinks=False).st_size
+            extension_counts[_extension(entry.name)] += 1
 
         try:
             disk = shutil.disk_usage(media_root)
@@ -247,11 +310,6 @@ class UserViewSet(viewsets.ModelViewSet):
             .order_by('-file_count', '-updated_at')
             .values('id', 'title', 'file_count')[:10]
         )
-
-        extension_counts = {}
-        for file_path in all_files:
-            ext = file_path.suffix.lower().lstrip('.') or 'unknown'
-            extension_counts[ext] = extension_counts.get(ext, 0) + 1
 
         sorted_extension_counts = sorted(
             [{'type': ext, 'count': count} for ext, count in extension_counts.items()],
@@ -298,18 +356,21 @@ class UserViewSet(viewsets.ModelViewSet):
         )
         offset = (page - 1) * page_size
 
-        total_entries = sum(1 for _ in current_dir.iterdir())
-        requested_count = min(offset + page_size, total_entries)
-        paginated_entries = heapq.nsmallest(
-            requested_count,
-            current_dir.iterdir(),
-            key=lambda path: (not path.is_dir(), path.name.lower()),
-        )[offset:]
+        # A single scandir pass; DirEntry.is_dir() usually needs no stat call.
+        # Only the entries on the requested page are stat'ed below.
+        with os.scandir(current_dir) as iterator:
+            sortable_entries = [(not entry.is_dir(), entry.name.lower(), entry) for entry in iterator]
+        total_entries = len(sortable_entries)
+        paginated_entries = [
+            entry for _, _, entry in heapq.nsmallest(
+                offset + page_size, sortable_entries, key=lambda item: (item[0], item[1]),
+            )[offset:]
+        ]
 
         # Only query metadata for files shown on this page. Previously every
         # managed-file row was loaded for each page request.
         page_file_paths = [
-            entry.relative_to(media_root).as_posix()
+            Path(entry.path).relative_to(media_root).as_posix()
             for entry in paginated_entries
             if entry.is_file()
         ]
@@ -341,7 +402,7 @@ class UserViewSet(viewsets.ModelViewSet):
         file_map = {**qrcode_map, **question_media_map, **answer_map}
 
         for entry in paginated_entries:
-            rel = entry.relative_to(media_root).as_posix()
+            rel = Path(entry.path).relative_to(media_root).as_posix()
             if entry.is_dir():
                 directories.append({
                     'name': entry.name,
@@ -356,7 +417,7 @@ class UserViewSet(viewsets.ModelViewSet):
                 'path': rel,
                 'size_bytes': stat_info.st_size,
                 'modified_at': datetime.fromtimestamp(stat_info.st_mtime, tz=dt_timezone.utc).isoformat(),
-                'extension': (entry.suffix.lower().lstrip('.') or 'unknown'),
+                'extension': _extension(entry.name),
                 'url': request.build_absolute_uri(f"{settings.MEDIA_URL}{rel}"),
                 'form_id': related['form_id'] if related else None,
                 'form_title': related['form_title'] if related else None,
@@ -396,6 +457,7 @@ class UserViewSet(viewsets.ModelViewSet):
         linked_answers.update(file_answer=None)
 
         Question.objects.filter(media_file=relative_path).update(media_file='')
+        # The form's QR code is regenerated the next time the form is saved.
         Form.objects.filter(qr_code=relative_path).update(qr_code='')
 
         file_path.unlink()
@@ -408,46 +470,46 @@ class UserViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], url_path='file-manager/cleanup-preview', throttle_classes=[FileManagerRateThrottle])
     def file_manager_cleanup_preview(self, request):
         include_files = (request.query_params.get('view') or '').strip().lower() in ['1', 'true', 'yes']
-        media_root, orphaned_files = self._collect_orphaned_managed_files()
+        _, orphaned_files = self._collect_orphaned_managed_files()
 
         payload = {
             'delete_count': len(orphaned_files),
-            'total_size_bytes': sum(path.stat().st_size for path in orphaned_files),
+            'total_size_bytes': sum(orphan.size for orphan in orphaned_files),
         }
 
         if include_files:
             payload['files'] = [
                 {
-                    'name': path.name,
-                    'path': path.relative_to(media_root).as_posix(),
-                    'size_bytes': path.stat().st_size,
-                    'modified_at': datetime.fromtimestamp(path.stat().st_mtime, tz=dt_timezone.utc).isoformat(),
-                    'url': request.build_absolute_uri(f"{settings.MEDIA_URL}{path.relative_to(media_root).as_posix()}"),
+                    'name': orphan.path.name,
+                    'path': orphan.relative_path,
+                    'size_bytes': orphan.size,
+                    'modified_at': datetime.fromtimestamp(orphan.mtime, tz=dt_timezone.utc).isoformat(),
+                    'url': request.build_absolute_uri(f"{settings.MEDIA_URL}{orphan.relative_path}"),
                 }
-                for path in sorted(orphaned_files, key=lambda file_path: file_path.as_posix().lower())
+                for orphan in sorted(orphaned_files, key=lambda orphan: orphan.relative_path.lower())
             ]
 
         return DRFResponse(payload)
 
     @action(detail=False, methods=['post'], url_path='file-manager/cleanup-orphaned-files', throttle_classes=[FileManagerRateThrottle])
     def file_manager_cleanup_orphaned_files(self, request):
-        media_root, orphaned_files = self._collect_orphaned_managed_files()
+        _, orphaned_files = self._collect_orphaned_managed_files()
+
+        # A form may have been saved since the cleanup scan began. Re-check all
+        # candidates with a few batched queries rather than three per file.
+        still_referenced = _referenced_media_paths([orphan.relative_path for orphan in orphaned_files])
 
         deleted_count = 0
         failed_files = []
 
-        for path in orphaned_files:
-            relative_path = path.relative_to(media_root).as_posix()
+        for orphan in orphaned_files:
+            if orphan.relative_path in still_referenced:
+                continue
             try:
-                # A form may have been saved since the cleanup scan began.
-                if (Question.objects.filter(media_file=relative_path).exists()
-                        or Answer.objects.filter(file_answer=relative_path).exists()
-                        or Form.objects.filter(qr_code=relative_path).exists()):
-                    continue
-                path.unlink()
+                orphan.path.unlink()
                 deleted_count += 1
             except OSError as exc:
-                failed_files.append({'path': relative_path, 'error': str(exc)})
+                failed_files.append({'path': orphan.relative_path, 'error': str(exc)})
 
         return DRFResponse({
             'deleted_count': deleted_count,
@@ -481,7 +543,9 @@ class FormViewSet(viewsets.ModelViewSet):
             # Regular user: owned forms + shared forms
             owned_forms = Form.objects.filter(owner=user)
             shared_forms = Form.objects.filter(permissions__user=user)
-            qs = (owned_forms | shared_forms).distinct().order_by('-updated_at')
+            qs = (owned_forms | shared_forms).distinct()
+        # The id tiebreaker keeps page boundaries stable for equal timestamps.
+        qs = qs.order_by('-updated_at', '-id')
 
         if self.action == 'list':
             archive_subquery = FormArchive.objects.filter(
@@ -511,6 +575,14 @@ class FormViewSet(viewsets.ModelViewSet):
                     qs = qs.filter(_is_archived=True)
                 else:
                     qs = qs.filter(_is_archived=False)
+
+            search = (self.request.query_params.get('search') or '').strip()
+            if search:
+                qs = qs.filter(
+                    Q(title__icontains=search)
+                    | Q(description__icontains=search)
+                    | Q(owner__name__icontains=search)
+                )
 
         if self.action in ['retrieve', 'update', 'partial_update']:
             qs = qs.prefetch_related('sections__questions__choices')
@@ -610,24 +682,39 @@ class FormViewSet(viewsets.ModelViewSet):
         return DRFResponse({'detail': 'Form restored.'}, status=status.HTTP_200_OK)
 
     @action(
-        detail=True,
+        detail=False,
         methods=['post'],
+        url_path=r'by-share-id/(?P<share_id>[^/.]+)/submit',
         throttle_classes=[SubmissionRateThrottle],
         # Public: skip auth entirely so a stale/expired Authorization header
         # from a previously-signed-in browser cannot cause a 401.
         authentication_classes=[],
         permission_classes=[permissions.AllowAny],
     )
-    def submit(self, request, pk=None):
-        # Public access allowed
-        form = self.get_object()
+    def submit(self, request, share_id=None):
+        # Public access is keyed on the unguessable share ID, never the
+        # sequential primary key, so only people with the link can respond.
+        try:
+            share_uuid = _uuid.UUID(str(share_id))
+        except ValueError:
+            raise Http404
+        form = get_object_or_404(self.get_queryset(), share_id=share_uuid)
 
         if form.is_closed:
+            deadline = form.deadline.astimezone(dt_timezone.utc)
             return DRFResponse(
                 {
-                    'detail': f'This form closed on {timezone.localtime(form.deadline).strftime("%b %d, %Y at %I:%M %p")}.',
+                    'detail': f'This form closed on {deadline.strftime("%b %d, %Y at %I:%M %p")} UTC.',
+                    'deadline': form.deadline.isoformat(),
                 },
                 status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Reject oversized bodies before Django reads and spools them to disk.
+        if request_body_too_large(request, MAX_SUBMISSION_UPLOAD_SIZE + REQUEST_OVERHEAD_ALLOWANCE):
+            return DRFResponse(
+                {'detail': 'Submission uploads may not exceed 25 MB in total.'},
+                status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             )
 
         total_upload_size = sum(upload.size for upload in request.FILES.values())
@@ -637,54 +724,53 @@ class FormViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Construct data for serializer manually to avoid QueryDict issues with nested data
-        data = {'form': form.id, 'answers': []}
+        if not isinstance(request.data, Mapping):
+            return DRFResponse(
+                {'detail': 'Expected an object with an "answers" list.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        # Handle nested multipart data parsing
-        import re
+        # Construct data for serializer manually to avoid QueryDict issues with nested data
+        data = {'answers': []}
 
         is_multipart_nested = any(k.startswith('answers[') for k in request.data.keys())
-        
+
         if is_multipart_nested:
             answers_dict = {}
             pattern = re.compile(r'answers\[(\d+)\]\[(.*?)\]')
-            
+
             for key, value in request.data.items():
                 match = pattern.match(key)
                 if match:
                     index = int(match.group(1))
                     field = match.group(2)
-                    
+
                     if index not in answers_dict:
                         answers_dict[index] = {}
-                    
+
                     if field == 'selected_choices':
                         if hasattr(request.data, 'getlist'):
                             answers_dict[index]['selected_choices'] = request.data.getlist(key)
                         else:
-                             answers_dict[index]['selected_choices'] = value
+                            answers_dict[index]['selected_choices'] = value
                     else:
                         answers_dict[index][field] = value
-            
+
             # Fallback for answers[0]field format
             if not answers_dict:
-                 pattern_no_bracket = re.compile(r'answers\[(\d+)\]([^\[]+)')
-                 for key, value in request.data.items():
+                pattern_no_bracket = re.compile(r'answers\[(\d+)\]([^\[]+)')
+                for key, value in request.data.items():
                     match = pattern_no_bracket.match(key)
                     if match:
                         index = int(match.group(1))
                         field = match.group(2)
-                        if index not in answers_dict: answers_dict[index] = {}
+                        if index not in answers_dict:
+                            answers_dict[index] = {}
                         answers_dict[index][field] = value
 
             data['answers'] = [answers_dict[i] for i in sorted(answers_dict.keys())]
-        else:
-             # Standard JSON or flat structure?
-             # If strictly JSON request, request.data is already a dict/list
-             # If using multipart without nesting? 
-             # request.data might contain 'answers' if sent as string?
-             if 'answers' in request.data:
-                 data['answers'] = request.data['answers']  
+        elif 'answers' in request.data:
+            data['answers'] = request.data['answers']
 
         serializer = ResponseSerializer(data=data, context={'request': request, 'form': form})
         if serializer.is_valid():
@@ -725,13 +811,14 @@ class FormViewSet(viewsets.ModelViewSet):
         form = self.get_object()
         # Validate filters before sending a streaming response's headers.
         filtered_responses = filter_responses(form, request.query_params)
+        tz = parse_timezone(request.query_params)
 
         def csv_rows():
             output = io.StringIO()
             writer = csv.writer(output, quoting=csv.QUOTE_ALL)
 
             # Headers
-            headers = ['Response ID', 'Submitted At']
+            headers = ['Response ID', f'Submitted At ({tz.key})']
             questions = []
             for section in form.sections.prefetch_related('questions').all():
                 for question in section.questions.all():
@@ -751,7 +838,7 @@ class FormViewSet(viewsets.ModelViewSet):
             # A chunked iterator keeps prefetching bounded so this streaming
             # response does not cache the full response history in memory.
             for r in responses.iterator(chunk_size=200):
-                row = [r.id, r.created_at.strftime('%Y-%m-%d %H:%M:%S')]
+                row = [r.id, r.created_at.astimezone(tz).strftime('%Y-%m-%d %H:%M:%S')]
                 answers_map = {a.question_id: a for a in r.answers.all()}
                 for q in questions:
                     answer = answers_map.get(q.id)
@@ -786,8 +873,11 @@ class FormPermissionViewSet(viewsets.ModelViewSet):
         ).select_related('form', 'user')
         form_id = self.request.query_params.get('form')
         if form_id:
-            queryset = queryset.filter(form_id=form_id)
-        return queryset
+            try:
+                queryset = queryset.filter(form_id=int(form_id))
+            except ValueError:
+                raise ValidationError({'form': 'Expected a numeric form ID.'})
+        return queryset.order_by('id')
 
     def perform_create(self, serializer):
         # Ensure form belongs to user

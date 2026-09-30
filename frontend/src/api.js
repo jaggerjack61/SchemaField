@@ -22,33 +22,29 @@ function refreshAccessToken(refreshToken) {
   return refreshPromise
 }
 
-function apiPathFromNextUrl(nextUrl) {
-  const parsed = new URL(nextUrl, window.location.origin)
-  const path = parsed.pathname.startsWith('/api/')
-    ? parsed.pathname.slice('/api'.length)
-    : parsed.pathname
-  return `${path}${parsed.search}`
-}
+const PAGE_FETCH_CONCURRENCY = 4
 
 async function getAllPages(url, config = {}) {
-  const firstResponse = await api.get(url, {
-    ...config,
-    params: {
-      page_size: 100,
-      ...(config.params || {}),
-    },
-  })
+  const params = { page_size: 100, ...(config.params || {}) }
+  const firstResponse = await api.get(url, { ...config, params })
 
   if (!Array.isArray(firstResponse.data?.results)) {
     return firstResponse
   }
 
   const results = [...firstResponse.data.results]
-  let next = firstResponse.data.next
-  while (next) {
-    const pageResponse = await api.get(apiPathFromNextUrl(next))
-    results.push(...pageResponse.data.results)
-    next = pageResponse.data.next
+  if (firstResponse.data.next && results.length > 0) {
+    // The first page is full, so its length is the page size the server used.
+    // Knowing the count, the remaining pages can be fetched in parallel.
+    const pageCount = Math.ceil(firstResponse.data.count / results.length)
+    const pages = Array.from({ length: pageCount - 1 }, (_, index) => index + 2)
+    const pageResults = []
+    for (let start = 0; start < pages.length; start += PAGE_FETCH_CONCURRENCY) {
+      const batch = pages.slice(start, start + PAGE_FETCH_CONCURRENCY)
+      const responses = await Promise.all(batch.map(page => api.get(url, { ...config, params: { ...params, page } })))
+      pageResults.push(...responses.map(response => response.data.results))
+    }
+    pageResults.forEach(pageItems => results.push(...pageItems))
   }
 
   return {
@@ -99,11 +95,15 @@ api.interceptors.response.use(
             originalRequest.headers.Authorization = 'Bearer ' + accessToken
             return api(originalRequest)
           } catch (refreshError) {
-            // Refresh failed — log out
-            localStorage.removeItem('access_token')
-            localStorage.removeItem('refresh_token')
-            if (!isOnPublicRoute() && window.location.pathname !== '/login') {
-              window.location.href = '/login'
+            // Only a rejected refresh token ends the session. Rate limiting,
+            // server errors and network failures are transient.
+            const refreshStatus = refreshError.response?.status
+            if (refreshStatus === 400 || refreshStatus === 401) {
+              localStorage.removeItem('access_token')
+              localStorage.removeItem('refresh_token')
+              if (!isOnPublicRoute() && window.location.pathname !== '/login') {
+                window.location.href = '/login'
+              }
             }
             return Promise.reject(refreshError)
           }
@@ -125,7 +125,7 @@ export const updateProfile = (data) => api.patch('/auth/me/', data)
 export const changePassword = (currentPassword, newPassword) => api.post('/auth/change-password/', { current_password: currentPassword, new_password: newPassword })
 
 // Forms
-export const getForms = () => getAllPages('/forms/')
+export const getFormsPage = (params = {}, signal) => api.get('/forms/', { params, signal })
 export const getForm = (id) => api.get('/forms/' + id + '/')
 export const getFormByShareId = (shareId) => api.get('/forms/by-share-id/' + shareId + '/')
 export const createForm = (data) => api.post('/forms/', data)
@@ -133,10 +133,13 @@ export const updateForm = (id, data) => api.put('/forms/' + id + '/', data)
 export const deleteForm = (id) => api.delete('/forms/' + id + '/')
 export const archiveForm = (id) => api.post('/forms/' + id + '/archive/')
 export const restoreForm = (id) => api.post('/forms/' + id + '/restore/')
-export const submitForm = (id, data) => api.post('/forms/' + id + '/submit/', data)
+export const submitForm = (shareId, data) => api.post('/forms/by-share-id/' + shareId + '/submit/', data)
 export const getFormResponses = (id, params = {}, signal) => api.get('/forms/' + id + '/responses/', { params: { page_size: 50, ...params }, signal })
 export const getFormAnalytics = (id, params = {}, signal) => api.get('/forms/' + id + '/analytics/', { params, signal })
-export const exportFormResponses = (id, params = {}) => api.get('/forms/' + id + '/export_csv/', { params, responseType: 'blob' })
+export const exportFormResponses = (id, params = {}) => api.get('/forms/' + id + '/export_csv/', {
+  params: { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, ...params },
+  responseType: 'blob',
+})
 
 // Question media upload
 export const uploadQuestionMedia = (file) => {
@@ -146,7 +149,7 @@ export const uploadQuestionMedia = (file) => {
 }
 
 // Users (Admin)
-export const getUsers = (search = '') => getAllPages('/users/', { params: search ? { search } : {} })
+export const getUsers = (search = '', signal) => getAllPages('/users/', { params: search ? { search } : {}, signal })
 export const createUser = (data) => api.post('/users/', data)
 export const updateUser = (id, data) => api.patch(`/users/${id}/`, data)
 export const resetUserPassword = (id, password) => api.post('/users/' + id + '/reset_password/', { password })

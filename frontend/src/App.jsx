@@ -1,5 +1,5 @@
 import { Suspense, lazy } from 'react'
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, useParams } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import Navbar from './components/Navbar'
@@ -17,6 +17,15 @@ const AdminPanel = lazy(() => import('./pages/AdminPanel'))
 const AdminUserManagement = lazy(() => import('./pages/AdminUserManagement'))
 const AdminFileManagement = lazy(() => import('./pages/AdminFileManagement'))
 const Profile = lazy(() => import('./pages/Profile'))
+const NotFound = lazy(() => import('./pages/NotFound'))
+
+// React Router reuses the component instance when switching between routes
+// that render the same element. Key the builder per form so the "new form"
+// page and each edit page always start from fresh state.
+function FormBuilderRoute() {
+  const { id } = useParams()
+  return <FormBuilder key={id ?? 'new'} />
+}
 
 function App() {
   return (
@@ -35,8 +44,8 @@ function App() {
             <Route element={<ProtectedRoute />}>
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/profile" element={<Profile />} />
-              <Route path="/forms/new" element={<FormBuilder />} />
-              <Route path="/forms/:id/edit" element={<FormBuilder />} />
+              <Route path="/forms/new" element={<FormBuilderRoute />} />
+              <Route path="/forms/:id/edit" element={<FormBuilderRoute />} />
               <Route path="/forms/:id/preview" element={<FormPreview />} />
               <Route path="/forms/:id/view" element={<PublicFormView />} />
               <Route path="/forms/:id/responses" element={<FormResponses />} />
@@ -50,6 +59,8 @@ function App() {
               <Route path="/admin/users" element={<AdminUserManagement />} />
               <Route path="/admin/files" element={<AdminFileManagement />} />
             </Route>
+
+            <Route path="*" element={<NotFound />} />
           </Routes>
           </Suspense>
         </main>

@@ -111,13 +111,13 @@ The frontend will be available at `http://localhost:5173`.
 | `POST /api/auth/token/refresh/` | Refresh an expired JWT access token |
 | `GET /api/auth/me/` | Current user info |
 | `PATCH /api/auth/me/` | Update profile (name) |
-| `POST /api/auth/change-password/` | Change password |
-| `/api/forms/` | CRUD for forms (with sections, questions, choices) |
+| `POST /api/auth/change-password/` | Change password; signs out other sessions and returns a new token pair |
+| `/api/forms/` | CRUD for forms (with sections, questions, choices); the list accepts `search`, `archived` (`true` / `false`), `page` and `page_size` (up to 100) |
 | `GET /api/forms/by-share-id/{share_id}/` | Get form by share ID (public) |
-| `POST /api/forms/{id}/submit/` | Submit a form response (public) |
+| `POST /api/forms/by-share-id/{share_id}/submit/` | Submit a form response (public; keyed by the share ID, not the numeric ID) |
 | `GET /api/forms/{id}/responses/` | Paginated responses for a form |
 | `GET /api/forms/{id}/analytics/` | Aggregated summaries and daily/weekly trends, optionally filtered |
-| `GET /api/forms/{id}/export_csv/` | Stream responses as CSV |
+| `GET /api/forms/{id}/export_csv/` | Stream responses as CSV; `timezone` (IANA name) sets the timestamp zone, default UTC |
 | `POST /api/forms/{id}/archive/` | Archive a form for the current user |
 | `POST /api/forms/{id}/restore/` | Restore (un-archive) a form |
 | `/api/users/` | User management (admin); supports `?search=` query (filters by name/email) |
@@ -138,9 +138,9 @@ The frontend will be available at `http://localhost:5173`.
 
 - **Schema-driven forms** with sections, ordered questions, and typed fields
 - **Question types:** short text, long text, number, float, multiple choice, multiple select, media upload
-- **Question media** — attach images/video/audio to questions (10 MB max, type-validated)
+- **Question media** — attach images/video/audio to questions (10 MB max, type-validated). Accepted: JPEG, PNG, GIF, WebP, HEIC/HEIF, MP4, WebM, Ogg, MOV, MP3, WAV, M4A and AAC
 - **Form deadlines** with automatic closing
-- **QR code generation** for every form (auto-generated on creation)
+- **QR code generation** for every form (generated on creation, and again on the next save if the file was deleted)
 - **Public form sharing** via unique `share_id` links (`/f/{shareId}`)
 - **Public submissions** — no auth required to submit a response
 - **Per-user form archiving** without affecting other collaborators
@@ -159,7 +159,7 @@ The frontend will be available at `http://localhost:5173`.
 - **CSV export** — streaming download of all responses (`/api/forms/{id}/export_csv/`)
 - **Form analytics** dashboard (`/forms/:id/responses/analytics`)
 
-Response lists, analytics, and CSV exports accept a `filters` query parameter containing a JSON list of answer filters (up to 20, combined with AND). Filters use `questionId` plus `textQuery`, `choiceId`, `mediaMode` (`with_file` / `without_file`), or `numericOperator` and `numericValue`. Response lists also accept `page`, `page_size` (up to 100), `sort` (`submittedAt`, `id`, or a question ID), and `direction` (`asc` / `desc`). Analytics accepts `trend` (`daily` / `weekly`) and an IANA `timezone`. Summaries cover the full matching history and return at most five text/file previews per question.
+Response lists, analytics, and CSV exports accept a `filters` query parameter containing a JSON list of answer filters (up to 20, combined with AND). Filters use `questionId` plus `textQuery`, `choiceId`, `mediaMode` (`with_file` / `without_file`), or `numericOperator` and `numericValue`. Response lists also accept `page`, `page_size` (up to 100), `sort` (`submittedAt`, `id`, or a question ID), and `direction` (`asc` / `desc`). Analytics accepts `trend` (`daily` / `weekly`), an IANA `timezone`, and `keywords=1` to include keyword counts for text questions. Summaries cover the full matching history and return at most five text/file previews per question.
 
 CSV exports quote every field and prefix formula-like text with a tab for spreadsheet safety; validated numeric answers retain their numeric spelling. The protective tab remains in the data if the CSV is imported programmatically.
 
@@ -176,6 +176,21 @@ Orphan cleanup excludes files modified within the last 24 hours (`ORPHAN_UPLOAD_
 
 - **Profile page** (`/profile`) with editable name
 - **Password change** support
+
+### Configuration
+
+| Setting | Purpose |
+|---|---|
+| `FRONTEND_BASE_URL` | Public URL of the frontend, embedded in each form's QR code (default `http://localhost:5173`). Run `python manage.py regenerate_qr_codes --all` after changing it. |
+| `DJANGO_NUM_PROXIES` | Number of trusted reverse proxies in front of Django (default `0`). Rate limits key on the client IP; set this to your proxy count so `X-Forwarded-For` is read correctly and cannot be spoofed. |
+
+Management commands:
+
+- `python manage.py seed_admin [--email ...] [--password ...]` creates an admin. Without `--password` or `SEED_ADMIN_PASSWORD` it generates a random password and prints it once.
+- `python manage.py regenerate_qr_codes [--all]` regenerates missing QR codes, or all of them with `--all`.
+- `python manage.py rename_answer_uploads [--dry-run]` renames respondent uploads stored under their original filename (before migration 0007) to unguessable names. New uploads already get random names, because `/media/` is served without authentication.
+
+Access tokens last 30 minutes and are refreshed automatically. Changing or resetting a password signs out existing sessions.
 
 ---
 

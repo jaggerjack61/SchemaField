@@ -1,10 +1,18 @@
 import { useState } from 'react'
+import { CircleAlert, CircleCheck } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { updateProfile, changePassword } from '../api'
+import { getInitials } from '../initials'
 
-function getInitials(name, email) {
-  if (name) return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
-  return (email?.[0] || '?').toUpperCase()
+function FormMessage({ message, success }) {
+  if (!message) return null
+  const Icon = success ? CircleCheck : CircleAlert
+  return (
+    <p className={`profile-message ${success ? 'success' : 'error'}`} role="status">
+      <Icon size={14} aria-hidden="true" />
+      {message}
+    </p>
+  )
 }
 
 export default function Profile() {
@@ -43,7 +51,10 @@ export default function Profile() {
     }
     setPwSaving(true)
     try {
-      await changePassword(currentPassword, newPassword)
+      const { data } = await changePassword(currentPassword, newPassword)
+      // The password change revoked every earlier token, including this session's.
+      localStorage.setItem('access_token', data.access)
+      localStorage.setItem('refresh_token', data.refresh)
       setPwMessage('Password changed successfully.')
       setCurrentPassword('')
       setNewPassword('')
@@ -65,102 +76,114 @@ export default function Profile() {
   return (
     <div className="profile-page">
       <div className="profile-header">
-        <div className="profile-avatar">{getInitials(user?.name, user?.email)}</div>
+        <div className="avatar avatar-lg">{getInitials(user?.name, user?.email)}</div>
         <div className="profile-identity">
           <h1>{user?.name || 'User'}</h1>
           <span className="profile-email">{user?.email}</span>
         </div>
       </div>
 
-      <div className="profile-section">
+      <section className="card profile-section">
         <div className="profile-section-header">
           <h2>Profile</h2>
-          <p className="profile-section-desc">Manage your display name. Email and role cannot be changed here.</p>
+          <p>Your display name is shown to teammates you share forms with.</p>
         </div>
 
-        <div className="profile-info-row">
-          <div className="profile-info-item">
-            <span className="profile-info-label">Email</span>
-            <span className="profile-info-value">{user?.email}</span>
+        <dl className="profile-info-row">
+          <div>
+            <dt>Email</dt>
+            <dd>{user?.email}</dd>
           </div>
-          <div className="profile-info-item">
-            <span className="profile-info-label">Role</span>
-            <span className="profile-info-value profile-role-badge">{user?.role}</span>
+          <div>
+            <dt>Role</dt>
+            <dd><span className={`badge ${user?.role === 'admin' ? 'badge-accent' : ''}`}>{user?.role}</span></dd>
           </div>
-          <div className="profile-info-item">
-            <span className="profile-info-label">Joined</span>
-            <span className="profile-info-value">{joined}</span>
+          <div>
+            <dt>Member since</dt>
+            <dd>{joined}</dd>
           </div>
-        </div>
+        </dl>
 
-        <form onSubmit={handleProfileSave} className="profile-form">
-          <label className="profile-label">
-            Display Name
-            <input
-              type="text"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              className="profile-input"
-              required
-            />
-          </label>
+        <form onSubmit={handleProfileSave}>
+          <div className="profile-fields">
+            <div className="field">
+              <label className="field-label" htmlFor="profile-name">Display name</label>
+              <input
+                id="profile-name"
+                type="text"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                className="input"
+                autoComplete="name"
+                required
+              />
+            </div>
+          </div>
           <div className="profile-form-footer">
-            {message && <p className={'profile-message' + (message.includes('updated') ? ' success' : ' error')}>{message}</p>}
+            <FormMessage message={message} success={message.includes('updated')} />
             <button type="submit" className="btn btn-primary" disabled={saving}>
               {saving ? 'Saving…' : 'Save'}
             </button>
           </div>
         </form>
-      </div>
+      </section>
 
-      <div className="profile-section">
+      <section className="card profile-section">
         <div className="profile-section-header">
           <h2>Password</h2>
-          <p className="profile-section-desc">Update your password. Must be at least 8 characters.</p>
+          <p>Use at least 8 characters. Changing it signs you out on other devices.</p>
         </div>
-        <form onSubmit={handlePasswordChange} className="profile-form">
-          <label className="profile-label">
-            Current Password
-            <input
-              type="password"
-              value={currentPassword}
-              onChange={e => setCurrentPassword(e.target.value)}
-              className="profile-input"
-              required
-            />
-          </label>
-          <div className="profile-field-group">
-            <label className="profile-label">
-              New Password
+        <form onSubmit={handlePasswordChange}>
+          <div className="profile-fields">
+            <div className="field">
+              <label className="field-label" htmlFor="current-password">Current password</label>
               <input
+                id="current-password"
                 type="password"
-                value={newPassword}
-                onChange={e => setNewPassword(e.target.value)}
-                className="profile-input"
+                value={currentPassword}
+                onChange={e => setCurrentPassword(e.target.value)}
+                className="input"
+                autoComplete="current-password"
                 required
-                minLength={8}
               />
-            </label>
-            <label className="profile-label">
-              Confirm
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={e => setConfirmPassword(e.target.value)}
-                className="profile-input"
-                required
-                minLength={8}
-              />
-            </label>
+            </div>
+            <div className="field-row">
+              <div className="field">
+                <label className="field-label" htmlFor="new-password">New password</label>
+                <input
+                  id="new-password"
+                  type="password"
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                  className="input"
+                  autoComplete="new-password"
+                  required
+                  minLength={8}
+                />
+              </div>
+              <div className="field">
+                <label className="field-label" htmlFor="confirm-password">Confirm new password</label>
+                <input
+                  id="confirm-password"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={e => setConfirmPassword(e.target.value)}
+                  className="input"
+                  autoComplete="new-password"
+                  required
+                  minLength={8}
+                />
+              </div>
+            </div>
           </div>
           <div className="profile-form-footer">
-            {pwMessage && <p className={'profile-message' + (pwMessage.includes('successfully') ? ' success' : ' error')}>{pwMessage}</p>}
+            <FormMessage message={pwMessage} success={pwMessage.includes('successfully')} />
             <button type="submit" className="btn btn-primary" disabled={pwSaving}>
-              {pwSaving ? 'Changing…' : 'Change Password'}
+              {pwSaving ? 'Updating…' : 'Update Password'}
             </button>
           </div>
         </form>
-      </div>
+      </section>
     </div>
   )
 }

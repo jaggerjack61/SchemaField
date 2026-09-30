@@ -1,0 +1,302 @@
+/* ============================================================
+   Form Controls
+   One look for every text input, select and textarea in the app.
+   ============================================================ */
+.input,
+.select,
+.textarea {
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: var(--font);
+  font-size: var(--text-base);
+  line-height: 1.4;
+  box-shadow: var(--shadow-xs);
+  outline: none;
+  transition: border-color var(--transition), box-shadow var(--transition), background-color var(--transition);
+}
+
+.input::placeholder,
+.textarea::placeholder {
+  color: var(--text-muted);
+  opacity: 0.85;
+}
+
+.input:hover,
+.select:hover,
+.textarea:hover {
+  border-color: var(--border-strong);
+}
+
+.input:focus,
+.select:focus,
+.textarea:focus,
+.input:focus-visible,
+.select:focus-visible,
+.textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--ring);
+}
+
+.input:disabled,
+.select:disabled,
+.textarea:disabled,
+.input[readonly] {
+  background: var(--bg-muted);
+  color: var(--text-secondary);
+  cursor: not-allowed;
+}
+
+.input[readonly] {
+  cursor: text;
+}
+
+.input[aria-invalid="true"],
+.textarea[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.input[aria-invalid="true"]:focus {
+  box-shadow: 0 0 0 3px var(--danger-subtle);
+}
+
+.textarea {
+  resize: vertical;
+  min-height: 96px;
+}
+
+.select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 34px;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 15 5 5 5-5'/%3E%3Cpath d='m7 9 5-5 5 5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 14px;
+}
+
+.input-sm,
+.select.input-sm {
+  min-height: 32px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  font-size: var(--text-sm);
+}
+
+/* Native date picker icon follows the theme. */
+[data-theme="dark"] .input::-webkit-calendar-picker-indicator {
+  filter: invert(0.8);
+}
+
+/* File inputs: style the native button so it matches .btn-secondary. */
+.file-input {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-muted);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: border-color var(--transition), background-color var(--transition);
+}
+
+.file-input:hover {
+  border-color: var(--accent);
+}
+
+.file-input::file-selector-button {
+  margin-right: 12px;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: var(--shadow-xs);
+}
+
+.file-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/* ---------- Field layout ---------- */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.field-label,
+.label {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.field-hint {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.field-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-sm);
+  color: var(--danger);
+}
+
+.field-error svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 520px) {
+  .field-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Input with a leading icon (search boxes). */
+.input-with-icon {
+  position: relative;
+  width: 100%;
+}
+
+.input-with-icon > svg {
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.input-with-icon .input {
+  padding-left: 34px;
+}
+
+/* ---------- Switch (a styled checkbox) ---------- */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.switch input {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  width: 32px;
+  height: 18px;
+  border-radius: 99px;
+  background: var(--border-strong);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color var(--transition);
+}
+
+.switch input::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform var(--transition);
+}
+
+.switch input:checked {
+  background: var(--accent);
+}
+
+.switch input:checked::after {
+  transform: translateX(14px);
+}
+
+.switch input:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ring);
+}
+
+/* ---------- Choice rows (radio / checkbox answers) ---------- */
+.choice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.choice-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  font-size: var(--text-md);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color var(--transition), background-color var(--transition);
+}
+
+.choice-option:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-card-hover);
+}
+
+.choice-option:has(input:checked) {
+  border-color: var(--accent-border);
+  background: var(--accent-subtle);
+}
+
+.choice-option:has(input:focus-visible) {
+  box-shadow: 0 0 0 3px var(--ring);
+}
+
+.choice-option:has(input:disabled) {
+  cursor: default;
+}
+
+.choice-option input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+  cursor: inherit;
+}
+
+.choice-option input:focus-visible {
+  outline: none;
+}

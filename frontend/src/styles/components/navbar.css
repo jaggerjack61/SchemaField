@@ -2,168 +2,148 @@
    Navbar
    ============================================================ */
 .navbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 32px;
-  height: 64px;
-  background: var(--bg-glass);
-  backdrop-filter: saturate(180%) blur(5px);
-  border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
   z-index: 100;
+  height: var(--navbar-height);
+  background: var(--bg-glass);
+  backdrop-filter: saturate(180%) blur(12px);
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
+  border-bottom: 1px solid var(--border);
+}
+
+.navbar-inner {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  height: 100%;
+  max-width: var(--content-width);
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* Wide pages (spreadsheet) let the bar span the viewport too. */
+.app:has(.spreadsheet-page) .navbar-inner {
+  max-width: none;
 }
 
 .navbar-brand {
   display: flex;
   align-items: center;
-  gap: 12px;
-  font-weight: 700;
-  font-size: 1.1rem;
+  gap: 10px;
+  font-size: var(--text-md);
+  font-weight: 650;
   letter-spacing: -0.02em;
   color: var(--text-primary);
+  flex-shrink: 0;
 }
 
-.navbar-brand .logo-icon {
-  width: 24px;
-  height: 24px;
-  background: var(--text-primary);
-  color: var(--bg-primary);
-  border-radius: 50%; /* Vercel uses triangle, but circle/square is fine. Text 'S' inside. */
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.8rem;
-  font-weight: 800;
-  /* Remove gradient, simple solid contrast */
-}
-
-.navbar-links {
-  display: flex;
-  gap: 8px;
-}
-
-.navbar-links a,
-.navbar-links button {
-  padding: 8px 16px;
-  border-radius: var(--radius-sm);
-  font-size: 0.875rem;
-  font-weight: 500;
-  font-family: var(--font);
-  cursor: pointer;
-  transition: all var(--transition);
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-}
-
-.navbar-links a:hover,
-.navbar-links button:hover {
-  background: var(--accent-subtle);
-  color: var(--accent);
-}
-
-.navbar-links .btn-new {
-  background: var(--accent);
-  color: var(--text-inverse);
-}
-
-.navbar-links .btn-new:hover {
-  background: var(--accent-hover);
-}
-
-/* Theme toggle */
-.navbar-links .theme-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all var(--transition);
-}
-
-.navbar-links .theme-toggle:hover {
-  background: var(--accent-subtle);
-  color: var(--text-primary);
-  border-color: var(--text-muted);
-}
-
-/* Dropdown */
-.navbar-dropdown {
-  position: relative;
-}
-
-.navbar-dropdown-trigger {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 12px;
-  border-radius: var(--radius-sm);
-  font-size: 0.875rem;
-  font-weight: 500;
-  font-family: var(--font);
-  cursor: pointer;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text-secondary);
-  transition: all var(--transition);
-}
-
-.navbar-dropdown-trigger:hover {
-  background: var(--accent-subtle);
-  color: var(--text-primary);
-}
-
-.navbar-dropdown-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  min-width: 180px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  box-shadow: 0 8px 24px rgba(0,0,0,.12);
-  padding: 4px;
-  z-index: 200;
-  animation: dropdown-in 0.15s ease;
-}
-
-@keyframes dropdown-in {
-  from { opacity: 0; transform: translateY(-4px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-.navbar-dropdown-item {
+.logo-mark {
   display: block;
-  width: 100%;
-  padding: 8px 12px;
-  font-size: 0.85rem;
-  font-weight: 500;
-  font-family: var(--font);
-  color: var(--text-secondary);
-  background: none;
-  border: none;
+  flex-shrink: 0;
+}
+
+.navbar-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.navbar-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 10px;
   border-radius: var(--radius-sm);
-  cursor: pointer;
-  text-align: left;
-  text-decoration: none;
-  transition: all var(--transition);
+  font-size: var(--text-base);
+  font-weight: 500;
+  color: var(--text-muted);
+  transition: color var(--transition), background-color var(--transition);
 }
 
-.navbar-dropdown-item:hover {
-  background: var(--accent-subtle);
+.navbar-link svg {
+  width: 16px;
+  height: 16px;
+}
+
+.navbar-link:hover {
   color: var(--text-primary);
+  background: var(--bg-secondary);
 }
 
-.navbar-dropdown-divider {
-  height: 1px;
+.navbar-link.active {
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+}
+
+.navbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.navbar-icon-btn {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--transition), background-color var(--transition), border-color var(--transition);
+}
+
+.navbar-icon-btn svg {
+  width: 17px;
+  height: 17px;
+}
+
+.navbar-icon-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+}
+
+.navbar-user-trigger {
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+  transition: box-shadow var(--transition);
+}
+
+.navbar-user-trigger:hover,
+.navbar-user-trigger[aria-expanded="true"] {
+  box-shadow: 0 0 0 3px var(--bg-secondary);
+}
+
+.navbar-divider {
+  width: 1px;
+  height: 20px;
   background: var(--border);
-  margin: 4px 0;
+}
+
+@media (max-width: 640px) {
+  .navbar-inner {
+    gap: 12px;
+    padding: 0 16px;
+  }
+
+  .navbar-brand-text,
+  .navbar-link span,
+  .navbar-new span,
+  .navbar-divider {
+    display: none;
+  }
+
+  .navbar-new {
+    width: var(--btn-height);
+    padding: 0;
+  }
 }

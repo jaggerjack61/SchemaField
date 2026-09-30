@@ -1,4 +1,5 @@
 from django.db import models
+import os
 import uuid
 import qrcode
 from io import BytesIO
@@ -6,6 +7,17 @@ from django.core.files.base import ContentFile
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.conf import settings
 from django.utils import timezone
+
+
+def answer_upload_to(instance, filename):
+    """Store respondent uploads under an unguessable name.
+
+    The files are served from /media/ without authentication, so the original
+    filename (e.g. passport.jpg) must not be part of the URL.
+    """
+    today = timezone.now()
+    extension = os.path.splitext(filename)[1].lower()
+    return f'uploads/{today:%Y/%m/%d}/{uuid.uuid4().hex}{extension}'
 
 
 class UserManager(BaseUserManager):
@@ -52,7 +64,7 @@ class Form(models.Model):
     description = models.TextField(blank=True, default='')
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='forms', null=True, blank=True)
     share_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, null=True)
-    qr_code = models.ImageField(upload_to='qrcodes/', blank=True)
+    qr_code = models.ImageField(upload_to='qrcodes/%Y/%m/', blank=True)
     deadline = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -73,22 +85,30 @@ class Form(models.Model):
         return self.title
 
     def save(self, *args, **kwargs):
-        # Save first to ensure share_id is set
-        is_new = self.pk is None
         super().save(*args, **kwargs)
-        if is_new and not self.qr_code:
+        # Also covers existing forms whose QR code was deleted in the file manager.
+        if not self.qr_code:
             self._generate_qr_code()
+
+    def regenerate_qr_code(self):
+        """Replace the QR code, e.g. after FRONTEND_BASE_URL changes."""
+        if self.qr_code:
+            self.qr_code.delete(save=False)
+        self._generate_qr_code()
 
     def _generate_qr_code(self):
         url = f'{getattr(settings, "FRONTEND_BASE_URL", "http://localhost:5173")}/f/{self.share_id}'
         qr = qrcode.QRCode(version=1, box_size=10, border=4)
         qr.add_data(url)
         qr.make(fit=True)
-        img = qr.make_image(fill_color='#7c5cfc', back_color='#1c1c27')
+        # Dark modules on a light background: inverted codes are not read by
+        # every scanner, and low contrast makes printed codes unreliable.
+        img = qr.make_image(fill_color='black', back_color='white')
         buf = BytesIO()
         img.save(buf, format='PNG')
-        buf.seek(0)
-        self.qr_code.save(f'qr_{self.share_id}.png', ContentFile(buf.read()), save=True)
+        self.qr_code.save(f'qr_{self.share_id}.png', ContentFile(buf.getvalue()), save=False)
+        # Saving only this column keeps a QR refresh from bumping updated_at.
+        super().save(update_fields=['qr_code'])
 
 
 class Section(models.Model):
@@ -180,7 +200,7 @@ class Answer(models.Model):
     text_answer = models.TextField(blank=True, null=True)
 
     # Store uploaded file for media questions
-    file_answer = models.FileField(upload_to='uploads/%Y/%m/%d/', blank=True, null=True)
+    file_answer = models.FileField(upload_to=answer_upload_to, blank=True, null=True)
     
     # Store choices for MC/MS here
     selected_choices = models.ManyToManyField(Choice, blank=True)

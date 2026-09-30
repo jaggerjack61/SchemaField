@@ -1,9 +1,13 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import { ChartColumn, Clock, Download, FileX, Inbox, LayoutList, Paperclip, Pencil, Sheet, UserRound } from 'lucide-react'
 import { getForm, getFormResponses, getFormAnalytics, exportFormResponses } from '../api'
 
 import ResponseSummary from '../components/ResponseSummary'
 import Pagination from '../components/Pagination'
+import PageHeader from '../components/PageHeader'
+import EmptyState from '../components/EmptyState'
+import Toast, { useToast } from '../components/Toast'
 
 export default function FormResponses() {
   const { id } = useParams()
@@ -12,6 +16,7 @@ export default function FormResponses() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [activeTab, setActiveTab] = useState('summary')
+  const [toast, showToast] = useToast()
 
   useEffect(() => {
     let cancelled = false
@@ -67,70 +72,76 @@ export default function FormResponses() {
       window.URL.revokeObjectURL(url)
     } catch (err) {
       console.error('Failed to export CSV', err)
-      alert('Failed to export CSV')
+      showToast('Failed to export CSV', 'error')
     }
   }
 
   if (loading) return <div className="loading"><div className="spinner" /></div>
-  if (error) return <div className="empty-state"><h2>{error}</h2></div>
+  if (error) {
+    return <EmptyState icon={FileX} title="Couldn’t load responses" description={error} />
+  }
 
   return (
-    <div className="dashboard">
-      <div className="dashboard-header">
-        <div>
-           <h1>Responses: {form.title}</h1>
-           <span className="form-count">{summary.count} response{summary.count !== 1 ? 's' : ''}</span>
-        </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <Link
-            to={`/forms/${id}/responses/analytics`}
-            className="btn btn-primary"
-          >
-            📊 View Analytics
-          </Link>
-          <Link to={`/forms/${id}/responses/spreadsheet`} className="btn btn-secondary">
-            📋 View Spreadsheet
-          </Link>
-          <button onClick={handleExportCSV} className="btn btn-secondary">
-            ⬇ Export CSV
-          </button>
-          <Link to={`/forms/${id}/edit`} className="btn btn-secondary">
-            ← Back to Editor
-          </Link>
-        </div>
-      </div>
+    <div className="responses-page">
+      <PageHeader
+        back={{ to: '/dashboard', label: 'Forms' }}
+        title={form.title}
+        subtitle={`${summary.count} response${summary.count !== 1 ? 's' : ''}`}
+        actions={
+          <>
+            <Link to={`/forms/${id}/edit`} className="btn btn-ghost">
+              <Pencil aria-hidden="true" /> Edit form
+            </Link>
+            <button onClick={handleExportCSV} className="btn btn-secondary" disabled={summary.count === 0}>
+              <Download aria-hidden="true" /> Export CSV
+            </button>
+            <Link to={`/forms/${id}/responses/spreadsheet`} className="btn btn-secondary">
+              <Sheet aria-hidden="true" /> Spreadsheet
+            </Link>
+            <Link to={`/forms/${id}/responses/analytics`} className="btn btn-primary">
+              <ChartColumn aria-hidden="true" /> Analytics
+            </Link>
+          </>
+        }
+      />
 
       <div className="tabs">
-        <button 
+        <button
+          aria-pressed={activeTab === 'summary'}
           className={`tab-btn ${activeTab === 'summary' ? 'active' : ''}`}
           onClick={() => setActiveTab('summary')}
         >
+          <LayoutList aria-hidden="true" />
           Summary
         </button>
-        <button 
+        <button
+          aria-pressed={activeTab === 'individual'}
           className={`tab-btn ${activeTab === 'individual' ? 'active' : ''}`}
           onClick={() => setActiveTab('individual')}
         >
+          <UserRound aria-hidden="true" />
           Individual
         </button>
       </div>
 
       {summary.count === 0 ? (
-        <div className="empty-state">
-           <div className="empty-icon">📭</div>
-           <h2>No responses yet</h2>
-           <p>Share your form link to get started!</p>
-        </div>
+        <EmptyState
+          bordered
+          icon={Inbox}
+          title="No responses yet"
+          description="Share your form’s link or QR code, and responses will show up here as they arrive."
+        />
       ) : activeTab === 'summary' ? (
         <ResponseSummary form={form} summary={summary} />
       ) : (
-        <IndividualView 
+        <IndividualView
           key={id}
           formId={id}
-          questionsMap={questionsMap} 
-          choicesMap={choicesMap} 
+          questionsMap={questionsMap}
+          choicesMap={choicesMap}
         />
       )}
+      <Toast toast={toast} />
     </div>
   )
 }
@@ -156,44 +167,45 @@ function IndividualView({ formId, questionsMap, choicesMap }) {
   return (
     <div className="individual-view">
       <Pagination page={page} pageSize={1} count={total} onPage={setPage} disabled={loading} />
-      {error && <p role="alert">{error}</p>}
+      {error && <div className="alert alert-danger" role="alert">{error}</div>}
       {loading ? <div className="loading"><div className="spinner" /></div> : response && (
-      <div className="form-card" style={{ cursor: 'default' }}>
-         <div className="form-card-title">
+      <div className="card">
+        <div className="response-card-header">
+          <span className="response-card-title">Response {page} of {total}</span>
+          <span className="response-card-time">
+            <Clock size={14} aria-hidden="true" />
             Submission at {new Date(response.created_at).toLocaleString()}
-         </div>
-         
-         <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-           {response.answers.map(answer => {
-             const question = questionsMap[answer.question]
-             if (!question) return null
-             
-             let displayAnswer = answer.text_answer
-             
-             if (question.question_type === 'multiple_choice' || question.question_type === 'multiple_select') {
-                displayAnswer = answer.selected_choices
-                  .map(choiceId => choicesMap[choiceId] || '?')
-                  .join(', ')
-             } else if (question.question_type === 'media' && answer.file_answer) {
-                displayAnswer = (
-                  <a href={answer.file_answer} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary)', textDecoration: 'underline' }}>
-                    View File 
-                  </a>
-                )
-             }
+          </span>
+        </div>
 
-             return (
-               <div key={answer.id}>
-                  <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                    {question.text}
-                  </div>
-                  <div style={{ fontSize: '0.95rem', color: 'var(--text-primary)' }}>
-                    {displayAnswer || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>No answer</span>}
-                  </div>
-               </div>
-             )
-           })}
-         </div>
+        <dl className="response-answers">
+          {response.answers.map(answer => {
+            const question = questionsMap[answer.question]
+            if (!question) return null
+
+            let displayAnswer = answer.text_answer
+
+            if (question.question_type === 'multiple_choice' || question.question_type === 'multiple_select') {
+              displayAnswer = answer.selected_choices
+                .map(choiceId => choicesMap[choiceId] || '?')
+                .join(', ')
+            } else if (question.question_type === 'media' && answer.file_answer) {
+              displayAnswer = (
+                <a href={answer.file_answer} target="_blank" rel="noopener noreferrer" className="response-file-link">
+                  <Paperclip size={14} aria-hidden="true" />
+                  {answer.file_answer.split('/').pop()}
+                </a>
+              )
+            }
+
+            return (
+              <div className="response-answer" key={answer.id}>
+                <dt>{question.text}</dt>
+                <dd>{displayAnswer || <span className="no-answer">No answer</span>}</dd>
+              </div>
+            )
+          })}
+        </dl>
       </div>
       )}
     </div>

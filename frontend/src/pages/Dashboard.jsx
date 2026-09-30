@@ -1,75 +1,175 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { getForms, deleteForm, archiveForm, restoreForm } from '../api'
+import {
+  Archive,
+  ArchiveRestore,
+  ChartColumn,
+  Ellipsis,
+  Eye,
+  FilePlus2,
+  FileText,
+  LayoutGrid,
+  Layers,
+  List,
+  ListChecks,
+  MessageSquare,
+  Pencil,
+  Plus,
+  Search,
+  SearchX,
+  Share2,
+  Trash2,
+  UsersRound,
+} from 'lucide-react'
+import { getFormsPage, deleteForm, archiveForm, restoreForm } from '../api'
 
 import FormPermissions from '../components/FormPermissions'
+import ShareModal from '../components/ShareModal'
+import PageHeader from '../components/PageHeader'
+import EmptyState from '../components/EmptyState'
+import Toast, { useToast } from '../components/Toast'
+import { useConfirm } from '../components/ConfirmDialog'
 
-const FORMS_PAGE_SIZE = 12
+const FORMS_PAGE_SIZE = 24
 
 export default function Dashboard() {
   const [forms, setForms] = useState([])
+  const [count, setCount] = useState(0)
   const [searchInput, setSearchInput] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
   const [viewMode, setViewMode] = useState('card')
   const [activeTab, setActiveTab] = useState('active')
-  const [visibleCount, setVisibleCount] = useState(FORMS_PAGE_SIZE)
   const [loading, setLoading] = useState(true)
-  const [confirmId, setConfirmId] = useState(null)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [shareForm, setShareForm] = useState(null)
   const [managePermissionsId, setManagePermissionsId] = useState(null)
-  const [toast, setToast] = useState(null)
-  const [copied, setCopied] = useState(false)
   const [openMenuId, setOpenMenuId] = useState(null)
   const lazyLoaderRef = useRef(null)
+  const queryControllerRef = useRef(null)
+  const [toast, showToast] = useToast()
+  const [confirm, confirmDialog] = useConfirm()
 
-  // Close overflow menu when clicking outside
+  // Close the overflow menu on any outside click or Escape.
   useEffect(() => {
     if (!openMenuId) return
     function handleClick() {
       setOpenMenuId(null)
     }
+    function handleKey(event) {
+      if (event.key === 'Escape') setOpenMenuId(null)
+    }
     document.addEventListener('click', handleClick)
-    return () => document.removeEventListener('click', handleClick)
+    document.addEventListener('keydown', handleKey)
+    return () => {
+      document.removeEventListener('click', handleClick)
+      document.removeEventListener('keydown', handleKey)
+    }
   }, [openMenuId])
   const navigate = useNavigate()
 
   useEffect(() => {
-    const timer = setTimeout(() => setSearchTerm(searchInput), 300)
+    const timer = setTimeout(() => setSearchTerm(searchInput.trim()), 300)
     return () => clearTimeout(timer)
   }, [searchInput])
 
-  useEffect(() => {
-    let cancelled = false
-    async function load() {
-      try {
-        const { data } = await getForms()
-        if (!cancelled) setForms(data.results || data)
-      } catch (err) {
-        if (!cancelled) showToast('Failed to load forms', 'error')
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-    load()
-    return () => { cancelled = true }
-  }, [])
+  // Search and the archive tab are applied by the server, so the dashboard
+  // only downloads the forms it shows.
+  const queryParams = useMemo(() => ({
+    archived: activeTab === 'archived' ? 'true' : 'false',
+    page_size: FORMS_PAGE_SIZE,
+    ...(searchTerm ? { search: searchTerm } : {}),
+  }), [activeTab, searchTerm])
 
-  async function handleDelete() {
+  useEffect(() => {
+    const controller = new AbortController()
+    queryControllerRef.current = controller
+    setLoading(true)
+    setLoadingMore(false)
+    getFormsPage({ ...queryParams, page: 1 }, controller.signal)
+      .then(({ data }) => {
+        setForms(data.results)
+        setCount(data.count)
+      })
+      .catch(() => { if (!controller.signal.aborted) showToast('Failed to load forms', 'error') })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
+    return () => controller.abort()
+  }, [queryParams, showToast])
+
+  const hasMoreForms = forms.length < count
+
+  const loadMore = useCallback(() => {
+    const controller = queryControllerRef.current
+    if (!controller) return
+    // Derive the page from what is loaded rather than a page counter: after an
+    // archive or delete the server's pages shift, and re-reading an overlapping
+    // page (deduplicated below) is better than skipping a form.
+    const page = Math.floor(forms.length / FORMS_PAGE_SIZE) + 1
+    const known = new Set(forms.map(form => form.id))
+    setLoadingMore(true)
+    getFormsPage({ ...queryParams, page }, controller.signal)
+      .then(({ data }) => {
+        const added = data.results.filter(form => !known.has(form.id))
+        if (added.length === 0) {
+          // Nothing new means the list is complete, even if the count says otherwise.
+          setCount(forms.length)
+          return
+        }
+        setForms(current => {
+          const ids = new Set(current.map(form => form.id))
+          return [...current, ...added.filter(form => !ids.has(form.id))]
+        })
+        setCount(data.count)
+      })
+      .catch(() => { if (!controller.signal.aborted) showToast('Failed to load more forms', 'error') })
+      .finally(() => { if (!controller.signal.aborted) setLoadingMore(false) })
+  }, [forms, queryParams, showToast])
+
+  // Re-observe after every batch: IntersectionObserver only reports changes,
+  // so a loader that stays on screen after a batch would otherwise never fire again.
+  useEffect(() => {
+    if (!hasMoreForms || loading || loadingMore || !lazyLoaderRef.current) {
+      return
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) loadMore()
+      },
+      { rootMargin: '200px 0px' }
+    )
+
+    observer.observe(lazyLoaderRef.current)
+
+    return () => observer.disconnect()
+  }, [hasMoreForms, loading, loadingMore, loadMore])
+
+  function removeFromList(id) {
+    setForms(current => current.filter((f) => f.id !== id))
+    setCount(current => Math.max(0, current - 1))
+  }
+
+  async function handleDelete(form) {
+    const confirmed = await confirm({
+      title: 'Delete form?',
+      message: `“${form.title}” and all of its responses will be permanently deleted. This can’t be undone.`,
+      confirmLabel: 'Delete form',
+      tone: 'danger',
+    })
+    if (!confirmed) return
     try {
-      await deleteForm(confirmId)
-      setForms(forms.filter((f) => f.id !== confirmId))
-      showToast('Form deleted successfully', 'success')
+      await deleteForm(form.id)
+      removeFromList(form.id)
+      showToast('Form deleted', 'success')
     } catch (err) {
       showToast('Failed to delete form', 'error')
-    } finally {
-      setConfirmId(null)
     }
   }
 
+  // Archiving moves the form to the other tab, so it leaves the current list.
   async function handleArchive(id) {
     try {
       await archiveForm(id)
-      setForms(forms.map((f) => f.id === id ? { ...f, is_archived: true } : f))
+      removeFromList(id)
       showToast('Form archived', 'success')
     } catch (err) {
       showToast('Failed to archive form', 'error')
@@ -79,16 +179,11 @@ export default function Dashboard() {
   async function handleRestore(id) {
     try {
       await restoreForm(id)
-      setForms(forms.map((f) => f.id === id ? { ...f, is_archived: false } : f))
+      removeFromList(id)
       showToast('Form restored', 'success')
     } catch (err) {
       showToast('Failed to restore form', 'error')
     }
-  }
-
-  function showToast(message, type) {
-    setToast({ message, type })
-    setTimeout(() => setToast(null), 3000)
   }
 
   function formatDate(dateStr) {
@@ -99,345 +194,275 @@ export default function Dashboard() {
     })
   }
 
-  function handleShareClick(form) {
-    setCopied(false)
-    setShareForm(form)
+  function runMenuAction(action) {
+    setOpenMenuId(null)
+    action()
   }
 
-  function getShareUrl(form) {
-    return `${window.location.origin}/f/${form.share_id}`
+  function plural(n, word) {
+    return `${n} ${word}${n !== 1 ? 's' : ''}`
   }
 
-  function copyShareLink() {
-    navigator.clipboard.writeText(getShareUrl(shareForm))
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  const normalizedSearchTerm = searchTerm.trim().toLowerCase()
-  const filteredForms = forms.filter((form) => {
-    if (activeTab === 'active' && form.is_archived) return false
-    if (activeTab === 'archived' && !form.is_archived) return false
-    if (!normalizedSearchTerm) {
-      return true
-    }
-
-    return [form.title, form.description, form.owner_name]
-      .filter(Boolean)
-      .some((value) => value.toLowerCase().includes(normalizedSearchTerm))
-  }).sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))
-  const visibleForms = filteredForms.slice(0, visibleCount)
-  const hasMoreForms = visibleCount < filteredForms.length
-
-  useEffect(() => {
-    setVisibleCount(FORMS_PAGE_SIZE)
-  }, [searchTerm, activeTab])
-
-  useEffect(() => {
-    if (!hasMoreForms || !lazyLoaderRef.current) {
-      return
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting) {
-          setVisibleCount((count) => Math.min(count + FORMS_PAGE_SIZE, filteredForms.length))
-        }
-      },
-      { rootMargin: '200px 0px' }
-    )
-
-    observer.observe(lazyLoaderRef.current)
-
-    return () => observer.disconnect()
-  }, [hasMoreForms, filteredForms.length])
-
-  if (loading) {
-    return (
-      <div className="loading">
-        <div className="spinner" />
-      </div>
-    )
-  }
+  const isArchived = activeTab === 'archived'
 
   return (
     <div className="dashboard">
-      <div className="dashboard-header">
-        <div>
-          <h1>My Forms</h1>
-          <span className="form-count">{filteredForms.length} of {forms.length} form{forms.length !== 1 ? 's' : ''}</span>
-        </div>
-        <Link to="/forms/new" className="btn btn-primary">
-          + Create Form
-        </Link>
-      </div>
+      <PageHeader
+        title="Forms"
+        subtitle={loading ? 'Loading…' : plural(count, 'form')}
+        actions={
+          <Link to="/forms/new" className="btn btn-primary">
+            <Plus aria-hidden="true" /> Create Form
+          </Link>
+        }
+      />
 
-      <div className="dashboard-tabs">
-        <button
-          type="button"
-          className={`tab-btn ${activeTab === 'active' ? 'active' : ''}`}
-          onClick={() => setActiveTab('active')}
-        >
-          📋 Active
-        </button>
-        <button
-          type="button"
-          className={`tab-btn ${activeTab === 'archived' ? 'active' : ''}`}
-          onClick={() => setActiveTab('archived')}
-        >
-          📦 Archived
-        </button>
-      </div>
-
-      <div className="dashboard-controls">
-        <input
-          type="text"
-          className="dashboard-search"
-          placeholder="Search forms..."
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          aria-label="Search forms"
-        />
-        <div className="view-toggle" role="group" aria-label="View mode">
+      <div className="dashboard-toolbar">
+        <div className="segmented" role="group" aria-label="Form status">
           <button
             type="button"
-            className={`btn btn-secondary ${viewMode === 'card' ? 'active' : ''}`}
+            aria-pressed={!isArchived}
+            className={!isArchived ? 'active' : ''}
+            onClick={() => setActiveTab('active')}
+          >
+            <FileText aria-hidden="true" /> Active
+          </button>
+          <button
+            type="button"
+            aria-pressed={isArchived}
+            className={isArchived ? 'active' : ''}
+            onClick={() => setActiveTab('archived')}
+          >
+            <Archive aria-hidden="true" /> Archived
+          </button>
+        </div>
+
+        <div className="input-with-icon dashboard-search">
+          <Search aria-hidden="true" />
+          <input
+            type="search"
+            className="input"
+            placeholder="Search forms…"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            aria-label="Search forms"
+          />
+        </div>
+
+        <div className="segmented view-toggle" role="group" aria-label="View mode">
+          <button
+            type="button"
+            className={viewMode === 'card' ? 'active' : ''}
             onClick={() => setViewMode('card')}
-            title="Card / icon view"
-            aria-label="Card / icon view"
+            title="Grid view"
+            aria-label="Grid view"
+            aria-pressed={viewMode === 'card'}
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true" className="view-icon">
-              <rect x="3" y="3" width="8" height="8" rx="1.5" />
-              <rect x="13" y="3" width="8" height="8" rx="1.5" />
-              <rect x="3" y="13" width="8" height="8" rx="1.5" />
-              <rect x="13" y="13" width="8" height="8" rx="1.5" />
-            </svg>
+            <LayoutGrid aria-hidden="true" />
           </button>
           <button
             type="button"
-            className={`btn btn-secondary ${viewMode === 'list' ? 'active' : ''}`}
+            className={viewMode === 'list' ? 'active' : ''}
             onClick={() => setViewMode('list')}
-            title="List / detail view"
-            aria-label="List / detail view"
+            title="List view"
+            aria-label="List view"
+            aria-pressed={viewMode === 'list'}
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true" className="view-icon">
-              <path d="M4 6h16" />
-              <path d="M4 12h16" />
-              <path d="M4 18h16" />
-            </svg>
+            <List aria-hidden="true" />
           </button>
         </div>
       </div>
 
-      {filteredForms.length === 0 ? (
-        <div className="empty-state">
-          <div className="empty-icon">{activeTab === 'archived' ? '📦' : '📝'}</div>
-          {forms.length === 0 ? (
-            <>
-              <h2>No forms yet</h2>
-              <p>Create your first form to get started!</p>
-              <Link to="/forms/new" className="btn btn-primary">
-                + Create Form
-              </Link>
-            </>
-          ) : activeTab === 'archived' ? (
-            <>
-              <h2>No archived forms</h2>
-              <p>Forms you archive will appear here.</p>
-            </>
-          ) : (
-            <>
-              <h2>No forms found</h2>
-              <p>Try a different search term.</p>
-            </>
-          )}
-        </div>
-      ) : (
-        <div className={`forms-grid ${viewMode === 'list' ? 'forms-list' : ''}`}>
-          {visibleForms.map((form) => (
-            <div
-              key={form.id}
-              className="form-card"
-              onClick={() => navigate(`/forms/${form.id}/preview`)}
-            >
-              <div className="form-card-title">{form.title}</div>
-              {form.description && (
-                <div className="form-card-desc">{form.description}</div>
-              )}
-                <div className="form-card-meta">
-                <span>📋 {form.section_count} section{form.section_count !== 1 ? 's' : ''}</span>
-                <span>❓ {form.question_count} question{form.question_count !== 1 ? 's' : ''}</span>
-                <span>✅ {form.response_count} response{form.response_count !== 1 ? 's' : ''}</span>
-                <span>🕐 {formatDate(form.updated_at)}</span>
-              </div>
-              
-              <div className="form-card-badge">
-                 {form.is_owned ? (
-                   <span className="badge-owned">Owned</span>
-                 ) : (
-                   <span className="badge-shared">
-                     Shared by {form.owner_name}
-                   </span>
-                 )}
-              </div>
-
-              <div className="form-card-actions" onClick={(e) => e.stopPropagation()}>
-                {(form.is_owned || form.user_permissions.includes('edit')) && (
-                  <button
-                    className="btn btn-secondary"
-                    onClick={() => navigate(`/forms/${form.id}/edit`)}
-                    title="Edit Form"
-                  >
-                    ✏️ Edit
-                  </button>
-                )}
-                <button
-                  className="btn btn-secondary"
-                  onClick={() => navigate(`/forms/${form.id}/responses`)}
-                  title="View Responses"
-                >
-                  📊 Responses
-                </button>
-                <button
-                  className="btn btn-secondary"
-                  onClick={() => handleShareClick(form)}
-                  title="Share Link"
-                >
-                  🔗 Share
-                </button>
-
-                <div className="form-card-actions-more">
-                  <button
-                    className="btn-more-toggle"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setOpenMenuId(openMenuId === form.id ? null : form.id)
-                    }}
-                    title="More actions"
-                    aria-label="More actions"
-                    aria-expanded={openMenuId === form.id}
-                  >
-                    <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
-                      <circle cx="12" cy="5" r="1.5" />
-                      <circle cx="12" cy="12" r="1.5" />
-                      <circle cx="12" cy="19" r="1.5" />
-                    </svg>
-                  </button>
-
-                  {openMenuId === form.id && (
-                    <div className="dropdown-menu" onClick={(e) => e.stopPropagation()}>
-                      {form.is_owned && (
-                        <button
-                          className="dropdown-item"
-                          onClick={() => setManagePermissionsId(form.id)}
-                        >
-                          👥 Users
-                        </button>
-                      )}
-                      {form.is_archived ? (
-                        <button
-                          className="dropdown-item"
-                          onClick={() => handleRestore(form.id)}
-                        >
-                          ♻️ Restore
-                        </button>
-                      ) : (
-                        <button
-                          className="dropdown-item"
-                          onClick={() => handleArchive(form.id)}
-                        >
-                          📦 Archive
-                        </button>
-                      )}
-                      {form.is_owned && (
-                        <div className="dropdown-divider" />
-                      )}
-                      {form.is_owned && (
-                        <button
-                          className="dropdown-item dropdown-item-danger"
-                          onClick={() => setConfirmId(form.id)}
-                        >
-                          🗑 Delete
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
+      {loading ? (
+        <div className={`forms-grid ${viewMode === 'list' ? 'forms-list' : ''}`} aria-busy="true" aria-label="Loading forms">
+          {Array.from({ length: viewMode === 'list' ? 5 : 6 }, (_, i) => (
+            <div className="form-card form-card-skeleton" key={i}>
+              <div className="skeleton skeleton-title" />
+              <div className="skeleton skeleton-sub" />
+              <div className="skeleton skeleton-line" />
             </div>
           ))}
         </div>
-      )}
+      ) : forms.length === 0 ? (
+        searchTerm ? (
+          <EmptyState
+            bordered
+            icon={SearchX}
+            title="No matching forms"
+            description={`Nothing matches “${searchTerm}”. Try a different search term.`}
+          />
+        ) : isArchived ? (
+          <EmptyState
+            bordered
+            icon={Archive}
+            title="No archived forms"
+            description="Forms you archive are kept here, out of the way but not deleted."
+          />
+        ) : (
+          <EmptyState
+            bordered
+            icon={FilePlus2}
+            title="Create your first form"
+            description="Build a form, share the link, and watch responses come in."
+            action={
+              <Link to="/forms/new" className="btn btn-primary">
+                <Plus aria-hidden="true" /> Create Form
+              </Link>
+            }
+          />
+        )
+      ) : (
+        <div className={`forms-grid ${viewMode === 'list' ? 'forms-list' : ''}`}>
+          {forms.map((form) => {
+            const canEdit = form.is_owned || form.user_permissions.includes('edit')
+            const menuOpen = openMenuId === form.id
+            return (
+              <article
+                key={form.id}
+                className={`form-card ${menuOpen ? 'menu-open' : ''}`}
+                onClick={() => navigate(`/forms/${form.id}/preview`)}
+              >
+                <div className="form-card-head">
+                  <div className="form-card-icon" aria-hidden="true">
+                    <FileText />
+                  </div>
+                  <div className="form-card-heading">
+                    <h3 className="form-card-title">
+                      <Link to={`/forms/${form.id}/preview`} onClick={(e) => e.stopPropagation()}>
+                        {form.title}
+                      </Link>
+                    </h3>
+                    <div className="form-card-sub">
+                      Updated {formatDate(form.updated_at)}
+                      {!form.is_owned && (
+                        <span className="badge" title={`Shared by ${form.owner_name}`}>
+                          <UsersRound aria-hidden="true" /> Shared by {form.owner_name}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
 
-      {hasMoreForms && (
-        <div className="forms-lazy-loader" ref={lazyLoaderRef} aria-live="polite">
-          Loading more forms...
+                {form.description && (
+                  <p className="form-card-desc">{form.description}</p>
+                )}
+
+                <div className="form-card-meta">
+                  <span title="Sections"><Layers aria-hidden="true" />{plural(form.section_count, 'section')}</span>
+                  <span title="Questions"><ListChecks aria-hidden="true" />{plural(form.question_count, 'question')}</span>
+                  <span title="Responses"><MessageSquare aria-hidden="true" />{plural(form.response_count, 'response')}</span>
+                </div>
+
+                <div className="form-card-actions" onClick={(e) => e.stopPropagation()}>
+                  {canEdit && (
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => navigate(`/forms/${form.id}/edit`)}
+                    >
+                      <Pencil aria-hidden="true" /> Edit
+                    </button>
+                  )}
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => navigate(`/forms/${form.id}/responses`)}
+                  >
+                    <ChartColumn aria-hidden="true" /> Responses
+                  </button>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setShareForm(form)}
+                  >
+                    <Share2 aria-hidden="true" /> Share
+                  </button>
+
+                  <div className="menu-anchor form-card-more">
+                    <button
+                      className="btn btn-ghost btn-sm btn-icon"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setOpenMenuId(menuOpen ? null : form.id)
+                      }}
+                      aria-label={`More actions for ${form.title}`}
+                      aria-haspopup="menu"
+                      aria-expanded={menuOpen}
+                    >
+                      <Ellipsis aria-hidden="true" />
+                    </button>
+
+                    {menuOpen && (
+                      <div className="dropdown-menu" role="menu" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          className="dropdown-item"
+                          role="menuitem"
+                          onClick={() => runMenuAction(() => navigate(`/forms/${form.id}/preview`))}
+                        >
+                          <Eye aria-hidden="true" /> Preview
+                        </button>
+                        {form.is_owned && (
+                          <button
+                            className="dropdown-item"
+                            role="menuitem"
+                            onClick={() => runMenuAction(() => setManagePermissionsId(form.id))}
+                          >
+                            <UsersRound aria-hidden="true" /> Manage access
+                          </button>
+                        )}
+                        {form.is_archived ? (
+                          <button
+                            className="dropdown-item"
+                            role="menuitem"
+                            onClick={() => runMenuAction(() => handleRestore(form.id))}
+                          >
+                            <ArchiveRestore aria-hidden="true" /> Restore
+                          </button>
+                        ) : (
+                          <button
+                            className="dropdown-item"
+                            role="menuitem"
+                            onClick={() => runMenuAction(() => handleArchive(form.id))}
+                          >
+                            <Archive aria-hidden="true" /> Archive
+                          </button>
+                        )}
+                        {form.is_owned && (
+                          <>
+                            <div className="dropdown-divider" />
+                            <button
+                              className="dropdown-item dropdown-item-danger"
+                              role="menuitem"
+                              onClick={() => runMenuAction(() => handleDelete(form))}
+                            >
+                              <Trash2 aria-hidden="true" /> Delete
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </article>
+            )
+          })}
         </div>
       )}
 
-      {/* Share Modal */}
-      {shareForm && (
-        <div className="share-modal-overlay" onClick={() => setShareForm(null)}>
-          <div className="share-modal" onClick={(e) => e.stopPropagation()}>
-            <h3>Share "{shareForm.title}"</h3>
-
-            {shareForm.qr_code && (
-              <div className="qr-container">
-                <img src={shareForm.qr_code} alt="QR Code" />
-              </div>
-            )}
-
-            <div className="share-link-box">
-              <input
-                type="text"
-                value={getShareUrl(shareForm)}
-                readOnly
-                onClick={(e) => e.target.select()}
-              />
-              <button className="btn btn-primary" onClick={copyShareLink}>
-                {copied ? '✅ Copied!' : '📋 Copy'}
-              </button>
-            </div>
-
-            <div className="share-modal-actions">
-              <button className="btn btn-secondary" onClick={() => setShareForm(null)}>
-                Close
-              </button>
-            </div>
-          </div>
+      {!loading && hasMoreForms && (
+        <div className="forms-lazy-loader inline-status" ref={lazyLoaderRef} aria-live="polite">
+          <div className="spinner" /> Loading more forms…
         </div>
       )}
 
-      {/* Delete confirmation dialog */}
-      {confirmId && (
-        <div className="confirm-overlay" onClick={() => setConfirmId(null)}>
-          <div className="confirm-dialog" onClick={(e) => e.stopPropagation()}>
-            <h3>Delete Form</h3>
-            <p>Are you sure you want to delete this form? This action cannot be undone.</p>
-            <div className="confirm-actions">
-              <button className="btn btn-secondary" onClick={() => setConfirmId(null)}>
-                Cancel
-              </button>
-              <button className="btn btn-danger" onClick={handleDelete}>
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {shareForm && <ShareModal form={shareForm} onClose={() => setShareForm(null)} />}
 
-      {/* Manage Permissions Modal */}
       {managePermissionsId && (
-        <FormPermissions 
-          formId={managePermissionsId} 
-          onClose={() => setManagePermissionsId(null)} 
+        <FormPermissions
+          formId={managePermissionsId}
+          onClose={() => setManagePermissionsId(null)}
         />
       )}
 
-      {/* Toast notification */}
-      {toast && (
-        <div className={`toast ${toast.type}`}>{toast.message}</div>
-      )}
+      {confirmDialog}
+      <Toast toast={toast} />
     </div>
   )
 }

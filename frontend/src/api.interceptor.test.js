@@ -37,6 +37,10 @@ function unauthorizedError(url = '/forms/') {
   }
 }
 
+function rejectedRefresh(status, message = 'token_not_valid') {
+  return Object.assign(new Error(message), { response: { status } })
+}
+
 function setLocation(pathname) {
   Object.defineProperty(window, 'location', {
     configurable: true,
@@ -55,7 +59,7 @@ describe('401 response interceptor on public share routes', () => {
 
   it('does not redirect to /login when refresh fails on /f/:shareId', async () => {
     setLocation('/f/abc123')
-    state.axiosPost.mockRejectedValue(new Error('token_not_valid'))
+    state.axiosPost.mockRejectedValue(rejectedRefresh(401))
 
     await expect(
       state.responseErrorHandler(unauthorizedError('/forms/by-share-id/abc123/'))
@@ -80,12 +84,24 @@ describe('401 response interceptor on public share routes', () => {
 
   it('still redirects to /login when refresh fails on a protected route', async () => {
     setLocation('/dashboard')
-    state.axiosPost.mockRejectedValue(new Error('token_not_valid'))
+    state.axiosPost.mockRejectedValue(rejectedRefresh(401))
 
     await expect(
       state.responseErrorHandler(unauthorizedError('/forms/'))
     ).rejects.toThrow('token_not_valid')
 
     expect(window.location.href).toBe('/login')
+  })
+
+  it('keeps the session when the refresh is throttled or the network fails', async () => {
+    setLocation('/dashboard')
+    for (const refreshError of [rejectedRefresh(429, 'throttled'), Object.assign(new Error('Network Error'), { request: {} })]) {
+      state.axiosPost.mockRejectedValueOnce(refreshError)
+      await expect(state.responseErrorHandler(unauthorizedError('/forms/'))).rejects.toBe(refreshError)
+    }
+
+    expect(window.location.href).toBe('')
+    expect(localStorage.getItem('access_token')).toBe('expired-access')
+    expect(localStorage.getItem('refresh_token')).toBe('stale-refresh')
   })
 })

@@ -77,7 +77,7 @@ class ReviewRegressionTests(TestCase):
 
     def test_empty_optional_submission_and_required_validation(self):
         public = APIClient()
-        url = reverse('form-submit', args=[self.form.pk])
+        url = reverse('form-submit', kwargs={'share_id': self.form.share_id})
         self.assertEqual(public.post(url, {}, format='multipart').status_code, 201)
         self.question.required = True
         self.question.save()
@@ -88,7 +88,7 @@ class ReviewRegressionTests(TestCase):
         self.question.question_type = 'float'
         self.question.save()
         public = APIClient()
-        url = reverse('form-submit', args=[self.form.pk])
+        url = reverse('form-submit', kwargs={'share_id': self.form.share_id})
         for value in ('1e9999999', '1e-9999999', '0e9999999', 'Infinity', 'NaN', '1' * 1025):
             result = public.post(url, {'answers': [{'question_id': self.question.pk, 'text_answer': value}]}, format='json')
             self.assertEqual(result.status_code, 400, value)
@@ -145,7 +145,9 @@ class ReviewRegressionTests(TestCase):
         self.question.media_file = 'question_media/claimed.png'
         self.question.save()
         self.client.force_authenticate(self.admin)
-        with patch('forms_api.views.UserViewSet._collect_orphaned_managed_files', return_value=(root, [path])):
+        from forms_api.views import OrphanedFile
+        orphan = OrphanedFile(path, 'question_media/claimed.png', 7, 0)
+        with patch('forms_api.views.UserViewSet._collect_orphaned_managed_files', return_value=(root, [orphan])):
             result = self.client.post(reverse('user-file-manager-cleanup-orphaned-files'))
         self.assertEqual(result.data['deleted_count'], 0)
         self.assertTrue(path.exists())
@@ -205,6 +207,52 @@ class ReviewRegressionTests(TestCase):
         self.assertEqual(len(list(csv.reader(io.StringIO(b''.join(exported.streaming_content).decode())))), 54)
         page = self.client.get(reverse('form-responses', args=[self.form.pk]), {**params, 'page_size': 10, 'page': 2})
         self.assertEqual((page.data['count'], len(page.data['results'])), (53, 10))
+
+    def test_and_or_filters_match_analytics_responses_and_export(self):
+        for text in ('alpha', 'beta', 'beta gamma', 'alpha beta gamma', 'other'):
+            self.answer(text=text)
+        criteria = [
+            {'questionId': str(self.question.pk), 'textQuery': 'alpha'},
+            {'questionId': str(self.question.pk), 'textQuery': 'beta', 'conjunction': 'or'},
+            {'questionId': str(self.question.pk), 'textQuery': 'gamma', 'conjunction': 'and'},
+        ]
+        for conjunction, expected in (
+            ('or', {'alpha', 'beta gamma', 'alpha beta gamma'}),
+            ('and', {'alpha beta gamma'}),
+        ):
+            criteria[1]['conjunction'] = conjunction
+            params = {'filters': json.dumps(criteria)}
+            with self.subTest(conjunction=conjunction):
+                result = self.client.get(reverse('form-analytics', args=[self.form.pk]), params)
+                self.assertEqual(result.status_code, 200)
+                self.assertEqual(result.data['count'], len(expected))
+                self.assertEqual(sum(row['count'] for row in result.data['trend']), len(expected))
+                page = self.client.get(reverse('form-responses', args=[self.form.pk]), params)
+                self.assertEqual({row['answers'][0]['text_answer'] for row in page.data['results']}, expected)
+                exported = self.client.get(reverse('form-export-csv', args=[self.form.pk]), params)
+                rows = list(csv.reader(io.StringIO(b''.join(exported.streaming_content).decode())))
+                self.assertEqual({row[2] for row in rows[1:]}, expected)
+                self.assertEqual(len(rows), len(expected) + 1)
+
+    def test_or_filter_handles_missing_media_answers(self):
+        media = Question.objects.create(section=self.section, question_type='media')
+        self.answer(text='alpha')
+        self.answer(question=media, text=None, file='uploads/a.png')
+        self.answer(text='other')
+        criteria = [
+            {'questionId': str(self.question.pk), 'textQuery': 'alpha'},
+            {'questionId': str(media.pk), 'mediaMode': 'without_file', 'conjunction': 'or'},
+        ]
+        result = self.client.get(reverse('form-analytics', args=[self.form.pk]), {'filters': json.dumps(criteria)})
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(result.data['count'], 2)
+
+    def test_invalid_filter_connections_are_rejected(self):
+        for conjunction in ('xor', '', None, [], {}):
+            params = {'filters': json.dumps([{'questionId': str(self.question.pk), 'textQuery': 'alpha', 'conjunction': conjunction}])}
+            for endpoint in ('form-analytics', 'form-export-csv', 'form-responses'):
+                with self.subTest(conjunction=conjunction, endpoint=endpoint):
+                    self.assertEqual(self.client.get(reverse(endpoint, args=[self.form.pk]), params).status_code, 400)
 
     def test_multiple_select_sort_uses_all_displayed_choice_labels(self):
         self.question.question_type = 'multiple_select'
@@ -400,7 +448,7 @@ class FormAccessTests(TestCase):
         self.form.deadline = timezone.now() - timedelta(hours=1)
         self.form.save(update_fields=['deadline'])
 
-        response = self.client.post(reverse('form-submit', args=[self.form.id]), {})
+        response = self.client.post(reverse('form-submit', kwargs={'share_id': self.form.share_id}), {})
 
         self.assertEqual(response.status_code, 403)
         self.assertIn('This form closed on', response.data['detail'])
@@ -474,7 +522,7 @@ class FormAccessTests(TestCase):
         expired_access = self._expired_access_token(self.owner)
 
         response = self.client.post(
-            reverse('form-submit', args=[self.form.id]),
+            reverse('form-submit', kwargs={'share_id': self.form.share_id}),
             {'answers': []},
             format='json',
             HTTP_AUTHORIZATION=f'Bearer {expired_access}',
@@ -537,7 +585,7 @@ class SubmissionValidationTests(TestCase):
 
     def submit(self, answers):
         return self.client.post(
-            reverse('form-submit', args=[self.form.id]),
+            reverse('form-submit', kwargs={'share_id': self.form.share_id}),
             {'answers': answers},
             format='json',
         )
@@ -604,7 +652,7 @@ class SubmissionValidationTests(TestCase):
         upload = SimpleUploadedFile('payload.exe', b'not media', content_type='application/octet-stream')
 
         response = self.client.post(
-            reverse('form-submit', args=[self.form.id]),
+            reverse('form-submit', kwargs={'share_id': self.form.share_id}),
             {
                 'answers[0][question_id]': str(self.required_question.id),
                 'answers[0][text_answer]': 'Present',
@@ -936,3 +984,200 @@ class FormArchiveTests(TestCase):
         self.assertTrue(FormArchive.objects.filter(user=self.other_user, form=self.form).exists())
         # Owner's form should not be archived
         self.assertFalse(FormArchive.objects.filter(user=self.owner, form=self.form).exists())
+
+
+class FixRegressionTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.owner = User.objects.create_user(email='fix-owner@example.com', name='Owner', password='fix-password-8812!')
+        self.form = Form.objects.create(owner=self.owner, title='Fixes')
+        self.section = Section.objects.create(form=self.form, title='Section')
+        self.question = Question.objects.create(section=self.section, text='Text')
+        self.client = APIClient()
+        self.submit_url = reverse('form-submit', kwargs={'share_id': self.form.share_id})
+
+    def login(self, **extra):
+        return self.client.post(reverse('login'), {'email': self.owner.email, 'password': 'wrong'}, format='json', **extra)
+
+    def test_throttles_do_not_share_a_bucket(self):
+        for _ in range(5):
+            self.assertEqual(self.client.post(self.submit_url, {'answers': []}, format='json').status_code, 201)
+        self.assertEqual(self.login().status_code, 401)
+
+    def test_forwarded_for_header_does_not_bypass_login_throttle(self):
+        statuses = [self.login(HTTP_X_FORWARDED_FOR=f'10.0.0.{i}').status_code for i in range(6)]
+        self.assertEqual(statuses[-1], 429)
+
+    def test_submission_requires_share_id(self):
+        self.assertEqual(self.client.post(f'/api/forms/{self.form.pk}/submit/', {'answers': []}, format='json').status_code, 404)
+        self.assertEqual(self.client.post('/api/forms/by-share-id/not-a-uuid/submit/', {'answers': []}, format='json').status_code, 404)
+        self.assertEqual(self.client.post(self.submit_url, {'answers': []}, format='json').status_code, 201)
+
+    def test_submit_rejects_non_object_and_oversized_bodies(self):
+        self.assertEqual(self.client.post(self.submit_url, [], format='json').status_code, 400)
+        result = self.client.post(self.submit_url, {'answers': []}, format='json', CONTENT_LENGTH=str(100 * 1024 * 1024))
+        self.assertEqual(result.status_code, 413)
+
+    def test_closed_form_reports_deadline_for_local_formatting(self):
+        self.form.deadline = timezone.now() - timedelta(hours=1)
+        self.form.save()
+        result = self.client.post(self.submit_url, {'answers': []}, format='json')
+        self.assertEqual(result.status_code, 403)
+        self.assertIn('UTC', result.data['detail'])
+        self.assertIn('deadline', result.data)
+
+    def test_permission_errors_are_lists(self):
+        self.client.force_authenticate(self.owner)
+        other = User.objects.create_user(email='fix-other@example.com', name='Other')
+        url = reverse('permission-list')
+        unknown = self.client.post(url, {'form': self.form.pk, 'email': 'nobody@example.com', 'permission_type': 'edit'}, format='json')
+        self.assertEqual(unknown.data, {'email': ['User with this email does not exist.']})
+        self.assertEqual(self.client.post(url, {'form': self.form.pk, 'email': other.email, 'permission_type': 'edit'}, format='json').status_code, 201)
+        duplicate = self.client.post(url, {'form': self.form.pk, 'email': other.email, 'permission_type': 'edit'}, format='json')
+        self.assertIsInstance(duplicate.data['permission_type'], list)
+        self.assertEqual(self.client.get(url, {'form': 'abc'}).status_code, 400)
+
+    def test_password_change_revokes_old_tokens(self):
+        from rest_framework_simplejwt.tokens import RefreshToken
+        old = RefreshToken.for_user(self.owner)
+        auth = {'HTTP_AUTHORIZATION': f'Bearer {old.access_token}'}
+        result = self.client.post(reverse('change-password'), {
+            'current_password': 'fix-password-8812!', 'new_password': 'another-password-7731!',
+        }, format='json', **auth)
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(self.client.get(reverse('me'), **auth).status_code, 401)
+        self.assertEqual(self.client.post(reverse('token-refresh'), {'refresh': str(old)}, format='json').status_code, 401)
+        fresh = {'HTTP_AUTHORIZATION': f'Bearer {result.data["access"]}'}
+        self.assertEqual(self.client.get(reverse('me'), **fresh).status_code, 200)
+        self.assertEqual(self.client.post(reverse('token-refresh'), {'refresh': result.data['refresh']}, format='json').status_code, 200)
+
+    def _choice_form(self, question_count):
+        form = Form.objects.create(owner=self.owner, title='Choices')
+        section = Section.objects.create(form=form)
+        answers = []
+        for index in range(question_count):
+            question = Question.objects.create(section=section, question_type='multiple_select', order=index)
+            choices = Choice.objects.bulk_create([Choice(question=question, text=str(i), order=i) for i in range(4)])
+            answers.append({'question_id': question.pk, 'selected_choices': [c.pk for c in choices[:3]]})
+        return form, answers
+
+    def test_submission_query_count_does_not_grow_with_answers(self):
+        counts = []
+        for question_count in (2, 12):
+            cache.clear()
+            form, answers = self._choice_form(question_count)
+            with CaptureQueriesContext(connection) as captured:
+                result = self.client.post(reverse('form-submit', kwargs={'share_id': form.share_id}), {'answers': answers}, format='json')
+            self.assertEqual(result.status_code, 201, result.data)
+            counts.append(len(captured))
+        self.assertEqual(counts[0], counts[1])
+        response = Response.objects.filter(form=form).get()
+        self.assertEqual(Answer.selected_choices.through.objects.filter(answer__response=response).count(), 36)
+
+    def test_submit_rejects_choice_from_another_question_on_same_form(self):
+        form, answers = self._choice_form(2)
+        answers[0]['selected_choices'] = answers[1]['selected_choices'][:1]
+        result = self.client.post(reverse('form-submit', kwargs={'share_id': form.share_id}), {'answers': answers}, format='json')
+        self.assertEqual(result.status_code, 400)
+
+    def test_numeric_answers_are_normalized(self):
+        number = Question.objects.create(section=self.section, question_type='number', text='N')
+        result = self.client.post(self.submit_url, {'answers': [{'question_id': number.pk, 'text_answer': ' 007 '}]}, format='json')
+        self.assertEqual(result.status_code, 201)
+        self.assertEqual(Answer.objects.get(question=number).text_answer, '7')
+        bad = self.client.post(self.submit_url, {'answers': [{'question_id': number.pk, 'text_answer': '1.5'}]}, format='json')
+        self.assertEqual(bad.status_code, 400)
+
+    def test_answer_uploads_get_unguessable_names_and_mov_is_accepted(self):
+        media = Question.objects.create(section=self.section, question_type='media')
+        upload = SimpleUploadedFile('My Passport.MOV', b'video', content_type='video/quicktime')
+        result = self.client.post(self.submit_url, {
+            'answers[0][question_id]': str(media.pk), 'answers[0][file_answer]': upload,
+        }, format='multipart')
+        self.assertEqual(result.status_code, 201, result.data)
+        name = Answer.objects.get(question=media).file_answer.name
+        self.assertRegex(name, r'^uploads/\d{4}/\d{2}/\d{2}/[0-9a-f]{32}\.mov$')
+
+    def test_analytics_query_count_does_not_grow_with_questions(self):
+        self.client.force_authenticate(self.owner)
+        counts = []
+        for question_count in (3, 15):
+            form = Form.objects.create(owner=self.owner, title='Analytics')
+            section = Section.objects.create(form=form)
+            questions = [Question.objects.create(section=section, question_type=kind, order=i)
+                         for i, kind in enumerate(['short_text', 'media', 'multiple_choice'] * (question_count // 3))]
+            response = Response.objects.create(form=form)
+            Answer.objects.bulk_create([Answer(response=response, question=q, text_answer='hello world') for q in questions])
+            with CaptureQueriesContext(connection) as captured:
+                self.assertEqual(self.client.get(reverse('form-analytics', args=[form.pk])).status_code, 200)
+            counts.append(len(captured))
+        self.assertEqual(counts[0], counts[1])
+
+    def test_keywords_are_opt_in_and_only_for_text_questions(self):
+        self.client.force_authenticate(self.owner)
+        number = Question.objects.create(section=self.section, question_type='number')
+        response = Response.objects.create(form=self.form)
+        Answer.objects.create(response=response, question=self.question, text_answer='wonderful wonderful day')
+        Answer.objects.create(response=response, question=number, text_answer='123456')
+        url = reverse('form-analytics', args=[self.form.pk])
+        self.assertNotIn('keywords', self.client.get(url).data['questions'][str(self.question.pk)])
+        data = self.client.get(url, {'keywords': '1'}).data['questions']
+        self.assertEqual(data[str(self.question.pk)]['keywords'][0], {'text': 'wonderful', 'count': 2})
+        self.assertNotIn('keywords', data[str(number.pk)])
+        self.assertEqual(data[str(number.pk)]['top_answers'], [{'text_answer': '123456', 'count': 1}])
+
+    def test_update_query_count_does_not_grow_with_form_size(self):
+        self.client.force_authenticate(self.owner)
+        counts = []
+        for section_count in (2, 6):
+            form = Form.objects.create(owner=self.owner, title='Update')
+            payload = {'title': 'Update', 'description': '', 'deadline': None, 'sections': []}
+            for si in range(section_count):
+                section = Section.objects.create(form=form, order=si)
+                data = {'id': section.pk, 'title': 'S', 'description': '', 'order': si, 'questions': []}
+                for qi in range(3):
+                    question = Question.objects.create(section=section, question_type='multiple_choice', order=qi)
+                    choice = Choice.objects.create(question=question, text='a')
+                    data['questions'].append({'id': question.pk, 'text': 'Q', 'question_type': 'multiple_choice', 'required': False,
+                                              'order': qi, 'choices': [{'id': choice.pk, 'text': 'a', 'order': 0}]})
+                payload['sections'].append(data)
+            with CaptureQueriesContext(connection) as captured:
+                self.assertEqual(self.client.put(reverse('form-detail', args=[form.pk]), payload, format='json').status_code, 200)
+            counts.append(len(captured))
+        self.assertEqual(counts[0], counts[1])
+
+    def test_list_honours_page_size_and_search(self):
+        self.client.force_authenticate(self.owner)
+        Form.objects.bulk_create([Form(owner=self.owner, title=f'Bulk {i}') for i in range(30)])
+        page = self.client.get(reverse('form-list'), {'page_size': 100})
+        self.assertEqual(len(page.data['results']), 31)
+        found = self.client.get(reverse('form-list'), {'search': 'fixes'})
+        self.assertEqual([row['id'] for row in found.data['results']], [self.form.pk])
+
+    def test_csv_timestamps_use_requested_timezone(self):
+        self.client.force_authenticate(self.owner)
+        from datetime import datetime, timezone as dt_timezone
+        response = Response.objects.create(form=self.form)
+        Response.objects.filter(pk=response.pk).update(created_at=datetime(2026, 9, 12, 23, 30, tzinfo=dt_timezone.utc))
+        result = self.client.get(reverse('form-export-csv', args=[self.form.pk]), {'timezone': 'Africa/Harare'})
+        rows = list(csv.reader(io.StringIO(b''.join(result.streaming_content).decode())))
+        self.assertEqual(rows[0][1], 'Submitted At (Africa/Harare)')
+        self.assertEqual(rows[1][1], '2026-09-13 01:30:00')
+        self.assertEqual(self.client.get(reverse('form-export-csv', args=[self.form.pk]), {'timezone': 'Nowhere/City'}).status_code, 400)
+
+    def test_missing_qr_code_is_regenerated_dark_on_light(self):
+        from PIL import Image
+        Form.objects.filter(pk=self.form.pk).update(qr_code='')
+        self.form.refresh_from_db()
+        self.form.save()
+        self.assertTrue(self.form.qr_code.name.startswith('qrcodes/'))
+        with Image.open(self.form.qr_code.path) as image:
+            corner = image.convert('L').getpixel((0, 0))
+        self.assertGreater(corner, 200)
+
+    def test_seed_admin_never_uses_a_fixed_password(self):
+        from django.core.management import call_command
+        out = io.StringIO()
+        call_command('seed_admin', email='seeded@example.com', stdout=out)
+        self.assertFalse(User.objects.get(email='seeded@example.com').check_password('12345'))
+        self.assertIn('Generated password', out.getvalue())

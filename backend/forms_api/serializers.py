@@ -1,11 +1,25 @@
 from decimal import Decimal, DecimalException, InvalidOperation
 
 from django.contrib.auth.password_validation import validate_password
-from django.db import transaction
+from django.db import IntegrityError, connection, transaction
+from django.db.models import prefetch_related_objects
 from django.core.files.storage import default_storage
 from rest_framework import serializers
+from rest_framework.exceptions import AuthenticationFailed, PermissionDenied
+from rest_framework_simplejwt.serializers import TokenRefreshSerializer
+from rest_framework_simplejwt.settings import api_settings as jwt_settings
+from rest_framework_simplejwt.utils import get_md5_hash_password
 from .models import Form, Section, Question, Choice, Response, Answer, FormPermission, FormArchive
 from .upload_validation import media_upload_error
+
+FORM_GRAPH = 'sections__questions__choices'
+CHOICE_TYPES = ('multiple_choice', 'multiple_select')
+
+
+def ensure_form_graph(form):
+    """Load sections, questions and choices in three queries unless already loaded."""
+    if 'sections' not in getattr(form, '_prefetched_objects_cache', {}):
+        prefetch_related_objects([form], FORM_GRAPH)
 
 
 class ChoiceSerializer(serializers.ModelSerializer):
@@ -86,6 +100,21 @@ class LoginSerializer(TokenObtainPairSerializer):
         return data
 
 
+class RevocationAwareTokenRefreshSerializer(TokenRefreshSerializer):
+    """simplejwt only checks the password-hash claim on access tokens. Check it
+    here too, or a refresh token from before a password change would keep
+    minting access tokens that are then rejected."""
+
+    def validate(self, attrs):
+        refresh = self.token_class(attrs['refresh'])
+        user = User.objects.filter(
+            **{jwt_settings.USER_ID_FIELD: refresh.payload.get(jwt_settings.USER_ID_CLAIM)}
+        ).first()
+        if user is None or refresh.payload.get(jwt_settings.REVOKE_TOKEN_CLAIM) != get_md5_hash_password(user.password):
+            raise AuthenticationFailed('The session is no longer valid. Please sign in again.', code='token_revoked')
+        return super().validate(attrs)
+
+
 class ResetPasswordSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True, min_length=8, validators=[validate_password])
 
@@ -114,13 +143,14 @@ class FormPermissionSerializer(serializers.ModelSerializer):
         read_only_fields = ['user']
         validators = []
 
+    # Every check lives in validate() so DRF reports errors as lists, like all
+    # other field errors. Errors raised from create() come back as bare strings.
     def validate(self, attrs):
         form = attrs.get('form', getattr(self.instance, 'form', None))
         if self.instance and form.pk != self.instance.form_id:
             raise serializers.ValidationError({'form': 'A permission cannot be moved to another form.'})
         request = self.context.get('request')
         if request and form.owner_id != request.user.pk:
-            from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied('You can only grant permissions for your own forms.')
         if self.instance:
             if 'email' in attrs:
@@ -129,25 +159,26 @@ class FormPermissionSerializer(serializers.ModelSerializer):
             if FormPermission.objects.filter(form=form, user=self.instance.user,
                                              permission_type=permission_type).exclude(pk=self.instance.pk).exists():
                 raise serializers.ValidationError({'permission_type': 'This user already has this permission.'})
+            return attrs
+
+        email = attrs.pop('email', None)
+        if not email:
+            raise serializers.ValidationError({'email': 'This field is required.'})
+        user = User.objects.filter(email=email).first()
+        if user is None:
+            raise serializers.ValidationError({'email': 'User with this email does not exist.'})
+        if FormPermission.objects.filter(form=form, user=user, permission_type=attrs['permission_type']).exists():
+            raise serializers.ValidationError({'permission_type': 'This user already has this permission for this form.'})
+        attrs['user'] = user
         return attrs
 
     def create(self, validated_data):
-        email = validated_data.pop('email', None)
-        if not email:
-            raise serializers.ValidationError({'email': 'This field is required.'})
         try:
-            user = User.objects.get(email=email)
-        except User.DoesNotExist:
-            raise serializers.ValidationError({'email': 'User with this email does not exist.'})
-        permission_type = validated_data['permission_type']
-        if FormPermission.objects.filter(
-            form=validated_data['form'],
-            user=user,
-            permission_type=permission_type,
-        ).exists():
-            raise serializers.ValidationError({'permission_type': 'This user already has this permission for this form.'})
-
-        return FormPermission.objects.create(user=user, **validated_data)
+            with transaction.atomic():
+                return FormPermission.objects.create(**validated_data)
+        except IntegrityError:
+            # Lost a race with an identical concurrent grant.
+            raise serializers.ValidationError({'permission_type': ['This user already has this permission for this form.']})
 
 
 class FormListSerializer(serializers.ModelSerializer):
@@ -223,6 +254,12 @@ class FormDetailSerializer(serializers.ModelSerializer):
         fields = ['id', 'title', 'description', 'deadline', 'created_at', 'updated_at', 'sections', 'share_id', 'qr_code']
         read_only_fields = ['created_at', 'updated_at', 'share_id', 'qr_code']
 
+    def to_representation(self, instance):
+        # Avoid a query per section and per question when serializing a form
+        # that was just created or updated (DRF drops the prefetch cache).
+        ensure_form_graph(instance)
+        return super().to_representation(instance)
+
     # ------------------------------------------------------------------ create
     @transaction.atomic
     def create(self, validated_data):
@@ -244,10 +281,9 @@ class FormDetailSerializer(serializers.ModelSerializer):
             return instance
 
         # Load the nested graph once so large forms do not issue a query per node.
-        existing_sections = {
-            section.id: section
-            for section in instance.sections.prefetch_related('questions__choices').all()
-        }
+        # The view has usually prefetched it already.
+        ensure_form_graph(instance)
+        existing_sections = {section.id: section for section in instance.sections.all()}
         incoming_section_ids = {s.get('id') for s in sections_data if s.get('id')}
         if len(incoming_section_ids) != len([s for s in sections_data if s.get('id')]):
             raise serializers.ValidationError({'sections': 'Duplicate section IDs are not allowed.'})
@@ -378,6 +414,7 @@ class FormDetailSerializer(serializers.ModelSerializer):
         if choices_to_update:
             Choice.objects.bulk_update(choices_to_update, ['text', 'order'])
 
+        # The prefetched graph is stale now; to_representation reloads it.
         instance._prefetched_objects_cache = {}
 
         return instance
@@ -430,58 +467,57 @@ class FormDetailSerializer(serializers.ModelSerializer):
                 Choice.objects.bulk_create(all_choices)
 
 
+class ChoiceIdListField(serializers.ListField):
+    """Choice IDs in and out. Incoming IDs are resolved in ResponseSerializer."""
+
+    def __init__(self, **kwargs):
+        super().__init__(child=serializers.IntegerField(), **kwargs)
+
+    def to_representation(self, value):
+        return [choice.pk for choice in value.all()]
+
+
 class AnswerSerializer(serializers.ModelSerializer):
-    question_id = serializers.PrimaryKeyRelatedField(
-        queryset=Question.objects.all(), source='question', write_only=True
-    )
+    # Plain IDs: ResponseSerializer resolves them against the form graph it has
+    # already loaded, instead of one query per question and per choice.
+    question_id = serializers.IntegerField(write_only=True)
     question = serializers.PrimaryKeyRelatedField(read_only=True)
+    selected_choices = ChoiceIdListField(required=False)
 
     class Meta:
         model = Answer
         fields = ['id', 'question_id', 'question', 'text_answer', 'file_answer', 'selected_choices']
 
     def validate(self, data):
-        question = data.get('question')
-        text_answer = data.get('text_answer')
-        file_answer = data.get('file_answer')
-
-        upload_error = media_upload_error(file_answer)
+        upload_error = media_upload_error(data.get('file_answer'))
         if upload_error:
             raise serializers.ValidationError({'file_answer': upload_error})
-
-        if question and text_answer is not None and text_answer != '':
-            # Normalise whitespace for all text answers first
-            text_answer = text_answer.strip()
-
-            if question.question_type == 'number':
-                try:
-                    text_answer = str(int(text_answer, 10))
-                except (ValueError, TypeError):
-                    raise serializers.ValidationError(
-                        {'text_answer': 'A valid integer is required for this question.'}
-                    )
-            elif question.question_type == 'float':
-                try:
-                    if len(text_answer) > 1024:
-                        raise InvalidOperation
-                    decimal_value = Decimal(text_answer)
-                    if (not decimal_value.is_finite()
-                            or abs(decimal_value.as_tuple().exponent) > 308
-                            or abs(decimal_value.adjusted()) > 308):
-                        raise InvalidOperation
-                    # normalize() rounds to the current decimal context and can
-                    # overflow. Decimal's string form retains the submitted precision.
-                    text_answer = str(decimal_value)
-                    if decimal_value == 0:
-                        text_answer = '0'
-                except (DecimalException, ValueError, TypeError):
-                    raise serializers.ValidationError(
-                        {'text_answer': 'A valid number is required for this question.'}
-                    )
-
-            data['text_answer'] = text_answer
-
         return data
+
+
+def _normalize_numeric_answer(question, text_answer):
+    if question.question_type == 'number':
+        try:
+            return str(int(text_answer, 10))
+        except (ValueError, TypeError):
+            raise serializers.ValidationError({
+                'answers': f'"{question.text}" requires a whole number.',
+            })
+    try:
+        if len(text_answer) > 1024:
+            raise InvalidOperation
+        decimal_value = Decimal(text_answer)
+        if (not decimal_value.is_finite()
+                or abs(decimal_value.as_tuple().exponent) > 308
+                or abs(decimal_value.adjusted()) > 308):
+            raise InvalidOperation
+    except (DecimalException, ValueError, TypeError):
+        raise serializers.ValidationError({
+            'answers': f'"{question.text}" requires a valid number.',
+        })
+    # normalize() rounds to the current decimal context and can overflow.
+    # Decimal's string form retains the submitted precision.
+    return '0' if decimal_value == 0 else str(decimal_value)
 
 
 class ResponseSerializer(serializers.ModelSerializer):
@@ -490,23 +526,22 @@ class ResponseSerializer(serializers.ModelSerializer):
     class Meta:
         model = Response
         fields = ['id', 'form', 'created_at', 'answers']
+        read_only_fields = ['form']
 
     def validate(self, data):
-        form = data.get('form')
-        target_form = self.context.get('form') or form
-        if form is None or target_form is None or form.id != target_form.id:
-            raise serializers.ValidationError({'form': 'Invalid submission target.'})
-        answers = data.get('answers', [])
+        form = self.context['form']
+        ensure_form_graph(form)
         questions = {
             question.id: question
-            for section in target_form.sections.all()
+            for section in form.sections.all()
             for question in section.questions.all()
         }
+        answers = data.get('answers', [])
         seen_question_ids = set()
 
         for answer in answers:
-            question = answer['question']
-            if question.id not in questions:
+            question = questions.get(answer.pop('question_id'))
+            if question is None:
                 raise serializers.ValidationError({
                     'answers': 'Every answer must reference a question on this form.',
                 })
@@ -515,33 +550,42 @@ class ResponseSerializer(serializers.ModelSerializer):
                     'answers': 'Each question can only be answered once.',
                 })
             seen_question_ids.add(question.id)
+            answer['question'] = question
 
-            selected_choices = list(answer.get('selected_choices', []))
+            choices_by_id = {choice.id: choice for choice in question.choices.all()}
+            choice_ids = list(dict.fromkeys(answer.get('selected_choices', [])))
+            if any(choice_id not in choices_by_id for choice_id in choice_ids):
+                raise serializers.ValidationError({
+                    'answers': f'A selected choice does not belong to question {question.id}.',
+                })
+            answer['selected_choices'] = [choices_by_id[choice_id] for choice_id in choice_ids]
+
             text_answer = (answer.get('text_answer') or '').strip()
             file_answer = answer.get('file_answer')
 
-            if question.question_type in ('multiple_choice', 'multiple_select'):
+            if question.question_type in CHOICE_TYPES:
                 if text_answer or file_answer:
                     raise serializers.ValidationError({
                         'answers': f'Question {question.id} only accepts choices.',
                     })
-                if question.question_type == 'multiple_choice' and len(selected_choices) > 1:
+                if question.question_type == 'multiple_choice' and len(choice_ids) > 1:
                     raise serializers.ValidationError({
                         'answers': f'Question {question.id} accepts only one choice.',
                     })
-                if any(choice.question_id != question.id for choice in selected_choices):
-                    raise serializers.ValidationError({
-                        'answers': f'A selected choice does not belong to question {question.id}.',
-                    })
             elif question.question_type == 'media':
-                if text_answer or selected_choices:
+                if text_answer or choice_ids:
                     raise serializers.ValidationError({
                         'answers': f'Question {question.id} only accepts a media file.',
                     })
-            elif file_answer or selected_choices:
-                raise serializers.ValidationError({
-                    'answers': f'Question {question.id} only accepts a text or numeric answer.',
-                })
+            else:
+                if file_answer or choice_ids:
+                    raise serializers.ValidationError({
+                        'answers': f'Question {question.id} only accepts a text or numeric answer.',
+                    })
+                if answer.get('text_answer') is not None:
+                    if text_answer and question.question_type in ('number', 'float'):
+                        text_answer = _normalize_numeric_answer(question, text_answer)
+                    answer['text_answer'] = text_answer
 
         missing_required = []
         answers_by_question = {answer['question'].id: answer for answer in answers}
@@ -552,7 +596,7 @@ class ResponseSerializer(serializers.ModelSerializer):
             if answer is None:
                 missing_required.append(question.id)
                 continue
-            if question.question_type in ('multiple_choice', 'multiple_select'):
+            if question.question_type in CHOICE_TYPES:
                 has_value = bool(answer.get('selected_choices'))
             elif question.question_type == 'media':
                 has_value = bool(answer.get('file_answer'))
@@ -571,9 +615,27 @@ class ResponseSerializer(serializers.ModelSerializer):
     @transaction.atomic
     def create(self, validated_data):
         answers_data = validated_data.pop('answers', [])
-        response = Response.objects.create(**validated_data)
-        for answer_data in answers_data:
-            selected_choices = answer_data.pop('selected_choices', [])
-            answer = Answer.objects.create(response=response, **answer_data)
-            answer.selected_choices.set(selected_choices)
+        response = Response.objects.create(form=self.context['form'])
+        answers = [
+            Answer(
+                response=response,
+                question=answer_data['question'],
+                text_answer=answer_data.get('text_answer'),
+                file_answer=answer_data.get('file_answer'),
+            )
+            for answer_data in answers_data
+        ]
+        if connection.features.can_return_rows_from_bulk_insert:
+            Answer.objects.bulk_create(answers)
+        else:
+            for answer in answers:
+                answer.save()
+
+        through = Answer.selected_choices.through
+        through.objects.bulk_create([
+            through(answer_id=answer.pk, choice_id=choice.pk)
+            for answer, answer_data in zip(answers, answers_data)
+            for choice in answer_data.get('selected_choices', [])
+        ])
+        prefetch_related_objects([response], 'answers__selected_choices')
         return response

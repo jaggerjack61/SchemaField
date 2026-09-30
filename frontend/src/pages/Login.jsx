@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
+import { ArrowLeft, CircleAlert, LoaderCircle } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import Logo from '../components/Logo'
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -46,68 +48,76 @@ export default function Login() {
     }
   }
 
+  const locked = cooldown > 0
+
   return (
-    <div className="login-page abstract-theme">
-      <div className="grid-bg"></div>
-      
-      <div className="login-container-abstract">
-        <Link to="/" className="brand-link">
-          <span className="logo-icon-small">S</span>
-          SchemaField
+    <div className="auth-page full-bleed">
+      <div className="auth-backdrop" aria-hidden="true" />
+
+      <div className="auth-container">
+        <Link to="/" className="auth-brand" aria-label="SchemaField home">
+          <Logo size={36} />
         </Link>
-        
-        <div className="login-card-abstract">
-          <div className="card-header">
-            <h2>Authentication</h2>
-            <p>Enter your credentials to access the workspace.</p>
+
+        <div className="auth-card card">
+          <div className="auth-card-header">
+            <h1>Sign in to SchemaField</h1>
+            <p>Enter your credentials to access your workspace.</p>
           </div>
 
           {error && (
-            <div className="error-message-abstract">
-              <span className="error-icon">!</span>
-              {error}
+            <div className="alert alert-danger" role="alert">
+              <CircleAlert aria-hidden="true" />
+              <span>{error}</span>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="login-form">
-            <div className="form-group">
-              <label>Email Address</label>
+          <form onSubmit={handleSubmit} className="auth-form">
+            <div className="field">
+              <label className="field-label" htmlFor="login-email">Email</label>
               <input
+                id="login-email"
                 type="email"
+                autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                placeholder="name@example.com"
-                className="input-abstract"
+                autoFocus
+                placeholder="name@company.com"
+                className="input"
               />
             </div>
 
-            <div className="form-group">
-              <label>Password</label>
+            <div className="field">
+              <label className="field-label" htmlFor="login-password">Password</label>
               <input
+                id="login-password"
                 type="password"
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                placeholder="••••••••"
-                className="input-abstract"
+                placeholder="Enter your password"
+                className="input"
               />
             </div>
 
-            <button 
-              type="submit" 
-              className="btn btn-primary btn-block"
-              disabled={loading || cooldown > 0}
+            <button
+              type="submit"
+              className="btn btn-primary btn-lg btn-block"
+              disabled={loading || locked}
             >
-              {cooldown > 0 ? `Too many attempts. Retry in ${cooldown}s` : loading ? 'Authenticating...' : 'Sign In'}
+              {loading && <LoaderCircle className="btn-spinner" aria-hidden="true" />}
+              {locked ? `Too many attempts. Retry in ${cooldown}s` : loading ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
 
-          <Link to="/" className="back-to-home-link">
-            ← Back to Home
-          </Link>
-
+          <p className="auth-note">Accounts are created by your workspace administrator.</p>
         </div>
+
+        <Link to="/" className="auth-back">
+          <ArrowLeft size={14} aria-hidden="true" /> Back to home
+        </Link>
       </div>
     </div>
   )

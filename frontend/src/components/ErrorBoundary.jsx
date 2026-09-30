@@ -1,4 +1,6 @@
 import React from 'react'
+import { TriangleAlert } from 'lucide-react'
+import EmptyState from './EmptyState'
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -18,15 +20,22 @@ class ErrorBoundary extends React.Component {
     if (this.state.hasError) {
       return (
         <div className="error-boundary">
-          <h1>Something went wrong.</h1>
-          {process.env.NODE_ENV === 'development' && this.state.error && (
-            <pre className="error-boundary-details">
-              {this.state.error.toString()}
-            </pre>
-          )}
-          {process.env.NODE_ENV !== 'development' && (
-            <p>An unexpected error occurred. Please refresh the page.</p>
-          )}
+          <div>
+            <EmptyState
+              icon={TriangleAlert}
+              tone="danger"
+              title="Something went wrong"
+              description="An unexpected error occurred. Reloading the page usually fixes it."
+              action={
+                <button className="btn btn-primary" onClick={() => window.location.reload()}>
+                  Reload page
+                </button>
+              }
+            />
+            {process.env.NODE_ENV === 'development' && this.state.error && (
+              <pre className="error-boundary-details">{this.state.error.toString()}</pre>
+            )}
+          </div>
         </div>
       )
     }

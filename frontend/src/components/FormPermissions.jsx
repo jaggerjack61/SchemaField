@@ -1,5 +1,17 @@
 import { useState, useEffect } from 'react'
+import { CircleAlert, UserPlus, UsersRound, X } from 'lucide-react'
 import { getFormPermissions, addFormPermission, removeFormPermission } from '../api'
+import Modal from './Modal'
+import { useConfirm } from './ConfirmDialog'
+import { getInitials } from '../initials'
+
+// DRF errors are either {detail: '...'} or {field: ['...']}; show the first message.
+function errorMessage(err, fallback) {
+  const data = err.response?.data
+  if (!data || typeof data !== 'object') return fallback
+  const value = data.detail ?? Object.values(data)[0]
+  return (Array.isArray(value) ? value[0] : value) || fallback
+}
 
 export default function FormPermissions({ formId, onClose }) {
   const [permissions, setPermissions] = useState([])
@@ -9,6 +21,7 @@ export default function FormPermissions({ formId, onClose }) {
   const [selectedUser, setSelectedUser] = useState('')
   const [permissionType, setPermissionType] = useState('view_responses')
   const [error, setError] = useState('')
+  const [confirm, confirmDialog] = useConfirm()
 
   useEffect(() => {
     loadData()
@@ -43,85 +56,103 @@ export default function FormPermissions({ formId, onClose }) {
       await loadData()
       setSelectedUser('')
     } catch (err) {
-      setError(err.response?.data?.email?.[0] || 'Failed to share form. Check if user exists.')
+      setError(errorMessage(err, 'Failed to share form.'))
     } finally {
       setAdding(false)
     }
   }
 
-  function handleRemove(id) {
-    if (window.confirm('Remove permission?')) {
-      removeFormPermission(id).then(() => {
-        setPermissions(current => current.filter(p => p.id !== id))
-      })
+  async function handleRemove(permission) {
+    const confirmed = await confirm({
+      title: 'Remove access?',
+      message: `${permission.user_name || permission.user_email} will no longer be able to access this form.`,
+      confirmLabel: 'Remove access',
+      tone: 'danger',
+    })
+    if (!confirmed) return
+    const id = permission.id
+    setError('')
+    try {
+      await removeFormPermission(id)
+      setPermissions(current => current.filter(p => p.id !== id))
+    } catch (err) {
+      setError(errorMessage(err, 'Failed to remove permission.'))
     }
   }
 
   return (
-    <div className="permissions-modal-overlay" onClick={onClose}>
-      <div className="permissions-modal" onClick={e => e.stopPropagation()}>
-        <h3>Manage Permissions</h3>
-        
-        <form onSubmit={handleAdd} className="permissions-form">
-          <input 
-            type="email" 
-            placeholder="User Email" 
-            value={selectedUser}
-            onChange={e => setSelectedUser(e.target.value)}
-            required
-          />
-          <select 
-            value={permissionType} 
-            onChange={e => setPermissionType(e.target.value)}
-          >
-            <option value="view_responses">View Responses</option>
-            <option value="edit">Edit Form</option>
-          </select>
-          <button type="submit" className="btn btn-primary" disabled={adding}>
-            {adding ? '...' : 'Add'}
-          </button>
-        </form>
-        
-        {error && <div className="permissions-error">{error}</div>}
+    <Modal
+      title="Manage access"
+      description="Give teammates access to edit this form or view its responses."
+      icon={<UsersRound />}
+      size="lg"
+      onClose={onClose}
+      footer={<button className="btn btn-secondary" onClick={onClose}>Done</button>}
+    >
+      <form onSubmit={handleAdd} className="permissions-form">
+        <input
+          type="email"
+          className="input"
+          placeholder="User Email"
+          aria-label="User email"
+          value={selectedUser}
+          onChange={e => setSelectedUser(e.target.value)}
+          required
+        />
+        <select
+          className="select permissions-type"
+          aria-label="Access level"
+          value={permissionType}
+          onChange={e => setPermissionType(e.target.value)}
+        >
+          <option value="view_responses">Can view responses</option>
+          <option value="edit">Can edit form</option>
+        </select>
+        <button type="submit" className="btn btn-primary" disabled={adding}>
+          <UserPlus aria-hidden="true" />
+          {adding ? 'Adding…' : 'Add'}
+        </button>
+      </form>
 
-        <div className="permissions-list">
-          {loading ? (
-            <div className="spinner" style={{ margin: '24px auto' }} />
-          ) : permissions.length === 0 ? (
-            <p className="permissions-empty">No users have access to this form.</p>
-          ) : (
-            <table className="permissions-table">
-              <tbody>
-                {permissions.map(p => (
-                  <tr key={p.id}>
-                    <td>
-                      <div className="permissions-user-name">{p.user_name}</div>
-                      <div className="permissions-user-email">{p.user_email}</div>
-                    </td>
-                    <td>
-                      <span className="permissions-badge">
-                        {p.permission_type === 'view_responses' ? 'View Responses' : 'Edit'}
-                      </span>
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <button 
-                        className="btn btn-secondary permissions-remove-btn"
-                        onClick={() => handleRemove(p.id)}
-                      >
-                        Remove
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+      {error && (
+        <div className="alert alert-danger permissions-error" role="alert">
+          <CircleAlert aria-hidden="true" />
+          <span>{error}</span>
         </div>
+      )}
 
-        <div className="permissions-modal-actions">
-          <button className="btn btn-secondary" onClick={onClose}>Close</button>
-        </div>
+      <div className="permissions-list">
+        <div className="permissions-list-label">People with access</div>
+        {loading ? (
+          <div className="loading permissions-loading"><div className="spinner" /></div>
+        ) : permissions.length === 0 ? (
+          <p className="permissions-empty">Only you can access this form.</p>
+        ) : (
+          <ul>
+            {permissions.map(p => (
+              <li key={p.id} className="permissions-row">
+                <span className="avatar">{getInitials(p.user_name, p.user_email)}</span>
+                <div className="permissions-user">
+                  <div className="permissions-user-name">{p.user_name || p.user_email}</div>
+                  <div className="permissions-user-email">{p.user_email}</div>
+                </div>
+                <span className={`badge ${p.permission_type === 'edit' ? 'badge-accent' : ''}`}>
+                  {p.permission_type === 'view_responses' ? 'View responses' : 'Edit'}
+                </span>
+                <button
+                  className="btn btn-ghost-danger btn-sm btn-icon"
+                  onClick={() => handleRemove(p)}
+                  aria-label={`Remove access for ${p.user_email}`}
+                  title="Remove access"
+                >
+                  <X aria-hidden="true" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
-    </div>
+      {confirmDialog}
+    </Modal>
   )
 }
